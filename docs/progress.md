@@ -52,7 +52,7 @@
 3i. (済、2026-10-18)git を導入し、https://github.com/Reasonia-TK/GSIS-Sim.git の `main` に push(`354a241` 初期登録、`ccbcf73` DSMC の入力と解析結果の追加)。大きなメッシュ・計算結果・ビルドの生成物は `.gitignore` で除外。GitHub からの新しい clone で、C++ はビルドとテスト 152/152、Python は 166 件通過・7 件 SKIP(6 件は `runs/` の計算結果がないため、1 件はシンボリックリンクの権限)を確認
 3j. (済、2026-10-18)GUI への AI モデリングの組み込み(`docs/gui.md`、画面写真 24〜28)。Python の試験 257 件通過・2 件 SKIP。統括役が試験・画面写真・API キーの扱い・既定でオンの beta 2 つ(公式資料で確認)を確認
 3k. (済、2026-10-18)ユーザーの判断を受けた追加: 既定のモデルを `claude-opus-5-5` に、OpenAI 形式に Responses API を追加(API の種類は自動 / Responses / Chat Completions。既定は `store: false`)、画面写真 01〜31(29〜31 は新規)。Python の試験 287 件通過・2 件 SKIP。コミットして `origin/main` に push(ユーザーの了承済み)。OpenAI 形式の既定のモデルは空のまま(一覧の取得か入力)、Responses の推論の要約は既定で頼まない(統括役の判断)
-3l. (済、2026-10-18)本物の API で AI モデリングを 1 回通す試験(`docs/gui.md`、`python/tests/test_gui_ai_live.py`)。ユーザーが自分の端末で流し、「api通ったみたい」と報告。流したのは Anthropic 形式だけ。OpenAI 形式(Responses API・Chat Completions API)は本物の API では未確認
+3l. (済、2026-10-18)本物の API で AI モデリングを 1 回通す試験(`docs/gui.md`、`python/tests/test_gui_ai_live.py`)。ユーザーが自分の端末で流し、「api通ったみたい」と報告。Anthropic 形式と、OpenAI 形式の Responses API(`openai-responses`、公式の接続先、`store: false`)が通った。Chat Completions API(`openai-chat`)と互換サーバーは本物の API では未確認
 3m. (2026-10-18)Claude Code に Codex のプラグイン(`codex@openai-codex`)を入れた。Codex の本体は既存の `C:\Users\TK\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`(0.162.1)を使う(npm では入れない。ユーザーの指示)。起動したままの Claude Code では PATH にこの場所がなく、`/codex:setup` は ready: false(PATH に足すと ready: true、ログイン済み)。Claude Code を起動し直した後、`/codex:setup` が ready: true になることを確かめた。あわせて、引き継ぎのスキル `handover`(全プロジェクト共通、`C:\Users\TK\.claude\skills\handover\`)を作った。引き継ぎ書は `.handover/<日時>.md` に置き、git には入れない(`.git/info/exclude`)
 4. (済)Codex の修正結果の確認。コミットと push はユーザーの返事を待つ
 5. (済)DSMC `d10_q` の後処理。感度計算は見送り
