@@ -1,0 +1,18 @@
+{
+  "case": "d10_q",
+  "run_dir": "C:\\Works\\20261015_GSIS-PBC\\validation\\dsmc\\runs\\d10_q",
+  "stage": "initial",
+  "backend": "cuda",
+  "executable": "C:\\Works\\20261003_DSMC\\dist\\DSMC-Studio-Windows-20261007-release\\bin\\dsmc-cuda.exe",
+  "executable_sha256": "16500f575095730f9133f0f7114b10e40987af74a5bd2678164033714d61cf67",
+  "arguments": [
+    "inputs.tube"
+  ],
+  "amrex_the_arena_init_size": 134217728,
+  "gpu_before": "NVIDIA GeForce RTX 5070 Ti, 610.88, 16303 MiB, 1432 MiB",
+  "host": "GTUNE",
+  "started": "2026-10-15T22:56:55.5319740+09:00",
+  "finished": "2026-10-16T01:04:30.2259764+09:00",
+  "elapsed_s": 7654.7,
+  "exit_code": 0
+}

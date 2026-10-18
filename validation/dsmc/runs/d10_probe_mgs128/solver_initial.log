@@ -1,0 +1,47 @@
+Initializing AMReX (26.09-dirty)...
+Initializing CUDA...
+CUDA initialized with 1 device.
+AMReX (26.09-dirty) initialized
+Grid: 2 boxes on 1 MPI rank(s), GPU (1 device(s) in use)
+
+==================== DSMC setup ====================
+ species           : He  (m = 6.6500e-27 kg, d_ref = 2.3002e-10 m, T_ref = 2.7315e+02 K, omega = 6.6000e-01, alpha = 1.2600e+00)
+ collision model   : VHS / NTC,  internal energy: Larsen-Borgnakke (rotation on, vibration on)
+ collision partner : nearest neighbor (virtual sub-cells)
+ initial gas       : n = 5.4107e+22 1/m^3,  T = 2.7315e+02 K,  u = (0.0000e+00, 0.0000e+00, 0.0000e+00) m/s
+ domain            : 2.2000e-02 x 8.2410e-03 x 8.2410e-03 m,  cells = 220 x 82 x 82
+ mean free path    : 7.8619e-05 m   (lambda/dx_min = 7.8619e-01,  Kn = lambda/L_min = 9.5400e-03)
+ mean coll. time   : 6.5423e-08 s   (tau/dt = 3.4837e+00)
+ mean thermal speed: 1.2017e+03 m/s  (cbar*dt/dx_min = 2.2568e-01)
+ Fnum              : 1.9518e+09 real molecules / simulator
+ initial particles : ~4.1420e+07  (2.8000e+01 per cell)
+ time step / steps : 1.8779e-08 s / 40
+ bc x              : lo = inflow, hi = outflow
+ bc y              : lo = symmetry, hi = specular
+ bc z              : lo = symmetry, hi = specular
+ surface meshes    : 1, triangles = 24064, volume quadrature = 16^3 / cell, max bounces = 128
+ geometry materials: 1
+ WARNING: cell size is larger than lambda/2.
+====================================================
+
+Resolved gas volume: 4.602515850527e-07 m^3
+Initial particles: 12759170, T = 273.18 K
+
+    step       time[s]          Np       Ncoll       T[K]     wall[s]
+       0    0.0000e+00    12759170           0     273.18         0.0
+      10    1.8779e-07    12739089     1801503     272.99         3.1
+      20    3.7559e-07    12718255     1811683     272.86         6.6
+      30    5.6338e-07    12697477     1806735     272.72        10.2
+      40    7.5118e-07    12677062     1801721     272.57        14.0
+
+Finished: step = 40, t = 7.5118e-07 s, particles = 12677062, T = 272.57 K, wall time = 14.0 s
+Timing [s]: move 10.441571, inject 0.933387, redistribute 0.099539, collide 2.387869, sample 0.105047, diag/output 0.014593
+Total GPU global memory (MB): 16302
+Free  GPU global memory (MB): 11061
+[The         Arena] max space allocated (MB): 3951
+[The         Arena] max space used      (MB): 3915
+[The Managed Arena] max space allocated (MB): 8
+[The Managed Arena] max space used      (MB): 0
+[The  Pinned Arena] max space allocated (MB): 8
+[The  Pinned Arena] max space used      (MB): 0
+AMReX (26.09-dirty) finalized

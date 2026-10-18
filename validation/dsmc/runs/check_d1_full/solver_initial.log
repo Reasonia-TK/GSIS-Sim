@@ -1,0 +1,43 @@
+Initializing AMReX (26.09-dirty)...
+Initializing CUDA...
+CUDA initialized with 1 device.
+AMReX (26.09-dirty) initialized
+Grid: 8 boxes on 1 MPI rank(s), GPU (1 device(s) in use)
+
+==================== DSMC setup ====================
+ species           : He  (m = 6.6500e-27 kg, d_ref = 2.3002e-10 m, T_ref = 2.7315e+02 K, omega = 6.6000e-01, alpha = 1.2600e+00)
+ collision model   : VHS / NTC,  internal energy: Larsen-Borgnakke (rotation on, vibration on)
+ collision partner : random in cell (no sub-cells)
+ initial gas       : n = 5.4107e+21 1/m^3,  T = 2.7315e+02 K,  u = (0.0000e+00, 0.0000e+00, 0.0000e+00) m/s
+ domain            : 2.2000e-02 x 1.6558e-02 x 1.6558e-02 m,  cells = 176 x 132 x 132
+ mean free path    : 7.8619e-04 m   (lambda/dx_min = 6.2896e+00,  Kn = lambda/L_min = 4.7482e-02)
+ mean coll. time   : 6.5423e-07 s   (tau/dt = 1.3935e+01)
+ mean thermal speed: 1.2017e+03 m/s  (cbar*dt/dx_min = 4.5135e-01)
+ Fnum              : 6.6512e+08 real molecules / simulator
+ initial particles : ~4.9066e+07  (1.6000e+01 per cell)
+ time step / steps : 4.6949e-08 s / 5
+ bc x              : lo = inflow, hi = outflow
+ bc y              : lo = specular, hi = specular
+ bc z              : lo = specular, hi = specular
+ surface meshes    : 1, triangles = 24064, volume quadrature = 16^3 / cell, max bounces = 128
+ geometry materials: 1
+====================================================
+
+Resolved gas volume: 1.840987539589e-06 m^3
+Initial particles: 14976165, T = 273.23 K
+
+    step       time[s]          Np       Ncoll       T[K]     wall[s]
+       0    0.0000e+00    14976165           0     273.23         0.0
+       5    2.3474e-07    14947678      490200     273.04         2.8
+
+Finished: step = 5, t = 2.3474e-07 s, particles = 14947678, T = 273.04 K, wall time = 2.8 s
+Timing [s]: move 2.020918, inject 0.657527, redistribute 0.019807, collide 0.097046, sample 0.015473, diag/output 0.004830
+Total GPU global memory (MB): 16302
+Free  GPU global memory (MB): 10135
+[The         Arena] max space allocated (MB): 4830
+[The         Arena] max space used      (MB): 4790
+[The Managed Arena] max space allocated (MB): 8
+[The Managed Arena] max space used      (MB): 0
+[The  Pinned Arena] max space allocated (MB): 8
+[The  Pinned Arena] max space used      (MB): 5
+AMReX (26.09-dirty) finalized

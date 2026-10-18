@@ -1,0 +1,23 @@
+{
+  "case": "smoke_d1",
+  "run_dir": "C:\\Works\\20261015_GSIS-PBC\\validation\\dsmc\\runs\\smoke_diag_lowflux",
+  "stage": "initial",
+  "backend": "cuda",
+  "executable": "C:\\Works\\20261003_DSMC\\dist\\DSMC-Studio-Windows-20261007-release\\bin\\dsmc-cuda.exe",
+  "executable_sha256": "16500f575095730f9133f0f7114b10e40987af74a5bd2678164033714d61cf67",
+  "arguments": [
+    "inputs.tube",
+    "dsmc.max_step=300",
+    "output.plot_int=0",
+    "output.diag_int=100",
+    "output.chk_int=-1",
+    "bc.xlo.n=5.410749602e+20"
+  ],
+  "amrex_the_arena_init_size": 134217728,
+  "gpu_before": "NVIDIA GeForce RTX 5070 Ti, 610.88, 16303 MiB, 1442 MiB",
+  "host": "GTUNE",
+  "started": "2026-10-15T22:16:24.9186197+09:00",
+  "finished": "2026-10-15T22:16:34.3647743+09:00",
+  "elapsed_s": 9.4,
+  "exit_code": 0
+}

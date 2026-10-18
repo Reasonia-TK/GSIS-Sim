@@ -1,0 +1,134 @@
+{
+  "run_dir": "validation\\dsmc\\runs\\d1_q",
+  "case": "d1_q",
+  "delta_rp": 1,
+  "symmetry_factor": 4,
+  "grid": {
+    "dx_over_R": 0.125,
+    "dy_over_R": 0.1254375,
+    "shape": [
+      176,
+      66,
+      66
+    ]
+  },
+  "steady": {
+    "from_step": 3200,
+    "t_from": 160.0,
+    "n_blocks": 12,
+    "z_second_minus_first_half": -0.5981758120443128
+  },
+  "mdot": {
+    "tube_mean": 0.19772919652414744,
+    "tube_se": 0.0008021125303752606,
+    "tube_se_independent": 0.0008021125303752606,
+    "tube_se_pairs": 0.0006015614365616469,
+    "downstream_mean": 0.19778059763437353,
+    "downstream_se": 0.0006103235519737103,
+    "upstream_mean": 0.19779217517277936,
+    "upstream_se": 0.005845108787742589,
+    "diff_vs_paper_reference_percent": 0.3701505198717925,
+    "diff_vs_paper_gsis_pbc_percent": -0.13676943224877336
+  },
+  "paper": {
+    "reference": 0.197,
+    "ref_method": "DSMC",
+    "gsis_pbc": 0.198,
+    "cis": 0.198,
+    "source": "table1_tube.csv"
+  },
+  "r_fit_over_R": 0.35,
+  "fig3_comparison": {
+    "reference_dir": "C:\\Works\\20261015_GSIS-PBC\\reference\\paper_2610.07658",
+    "note": "差 = この DSMC − 参照。参照点の X が管内の DSMC のスラブ中心の範囲にあるものだけを使う(外挿しない)。デジタイズの読み取り誤差は P・Ux で ±0.001 程度(傾きの急な所は ±0.004)",
+    "stats": {
+      "p_gsis": {
+        "file": "fig3_pressure_gsis_delta1.csv",
+        "n_points": 688,
+        "x_range": [
+          0.1544,
+          9.9155
+        ],
+        "mean_diff": 0.00394273002536369,
+        "rms_diff": 0.007259007494495788,
+        "max_abs_diff": 0.019277869154589844,
+        "x_at_max_abs_diff": 0.6709,
+        "rms_dsmc_se": 0.004327588534302257
+      },
+      "p_cis": {
+        "file": "fig3_pressure_cis_delta1.csv",
+        "n_points": 11,
+        "x_range": [
+          0.8411,
+          9.4191
+        ],
+        "mean_diff": -0.00270936300662656,
+        "rms_diff": 0.005553523590373454,
+        "max_abs_diff": 0.01129431583257648,
+        "x_at_max_abs_diff": 9.4191,
+        "rms_dsmc_se": 0.00424435178040779
+      },
+      "u_gsis": {
+        "file": "fig3_velocity_gsis_delta1.csv",
+        "n_points": 1048,
+        "x_range": [
+          0.0671,
+          9.9362
+        ],
+        "mean_diff": 0.013080429638284388,
+        "rms_diff": 0.02009588955241076,
+        "max_abs_diff": 0.045070969715787834,
+        "x_at_max_abs_diff": 9.6452,
+        "rms_dsmc_se": 0.005904811226081997
+      },
+      "u_cis": {
+        "file": "fig3_velocity_cis_delta1.csv",
+        "n_points": 10,
+        "x_range": [
+          1.1834,
+          9.6793
+        ],
+        "mean_diff": 0.013223790741295755,
+        "rms_diff": 0.018294910890507894,
+        "max_abs_diff": 0.041399517533021624,
+        "x_at_max_abs_diff": 9.6793,
+        "rms_dsmc_se": 0.00598216616116002
+      }
+    }
+  },
+  "log": {
+    "timing_s": {
+      "move": 834.912716,
+      "inject": 213.699503,
+      "redistribute": 8.941498,
+      "collide": 36.790673,
+      "sample": 6.097826,
+      "diag/output": 2.605249
+    },
+    "finished": {
+      "step": 8000,
+      "particles": 3300386,
+      "wall_time_s": 1103.3
+    },
+    "setup": {
+      "fnum": 665120000.0,
+      "resolved_gas_volume_m3": 4.602468848972e-07
+    }
+  },
+  "reservoir": {
+    "p_face_over_pin": 0.9983101223268003,
+    "p_face_se": 0.00010405588592380122,
+    "p_face_region": "入口面に接する 2 層のセル(x < -8R + 2Δx)、r < 7R",
+    "p_res_over_pin": 0.9975537962650831,
+    "p_res_se": 0.00010068634882764451,
+    "p_res_region": "x ∈ [-7R, -3R], r < 6R(管入口へ向かう流れの圧力低下を含む)",
+    "slope_dlnMdot_dlndelta_assumed": 0.2,
+    "mdot_corrected_to_p_face_estimate": 0.19813090899693692
+  },
+  "particles": {
+    "initial": 3743990,
+    "final": 3300386
+  },
+  "seconds_per_step": 0.13788093312500002,
+  "inlet_region_p_over_pin": 0.992771448235866
+}

@@ -1,0 +1,61 @@
+{
+  "description": "管→真空ケースの流体領域(内部が流体、fluid_inside = 1)。座標は R 単位",
+  "stl": "tube_vacuum_n128.stl",
+  "stl_sha256": "158c2989f297f1d0010c62a85b038f30d2eb9ef98d8f5b23b8ea80d768555476",
+  "units": "R (管半径)。DSMC 入力で surface0.scale = R[m] とする",
+  "n_theta": 128,
+  "radius_mode": "equal-area",
+  "polygon_circumradius_over_radius": 1.0002008339103527,
+  "aspect": 4.0,
+  "cap_step": 1.0,
+  "cap_extension_outside_domain": 0.1,
+  "dimensions": {
+    "upstream": {
+      "x": [
+        -8.0,
+        0.0
+      ],
+      "r": 8.0
+    },
+    "tube": {
+      "x": [
+        0.0,
+        10.0
+      ],
+      "r": 1.0
+    },
+    "downstream": {
+      "x": [
+        10.0,
+        14.0
+      ],
+      "r": 4.0
+    },
+    "stl_x_extent": [
+      -8.1,
+      14.1
+    ]
+  },
+  "cross_section_area_over_circle": {
+    "upstream": 0.9999999999999997,
+    "tube": 0.9999999999999997,
+    "downstream": 0.9999999999999997
+  },
+  "tube_perimeter_over_circle": 1.0001004179636166,
+  "fluid_volume_in_domain_full": 1840.9732950036182,
+  "fluid_volume_in_domain_full_circle": 1840.9732950036187,
+  "fluid_volume_in_domain_quarter": 460.24332375090455,
+  "stl_volume": 1866.1060362323367,
+  "stl_volume_relative_error_vs_polygon": 1.2184392045711345e-16,
+  "checks": {
+    "triangles": 24064,
+    "vertices": 12034,
+    "edges": 36096,
+    "closed_manifold": true,
+    "consistent_orientation": true,
+    "signed_volume": 1866.1060362323367,
+    "min_triangle_area": 0.0046438412695270544,
+    "mirror_symmetric_y": true,
+    "mirror_symmetric_z": true
+  }
+}

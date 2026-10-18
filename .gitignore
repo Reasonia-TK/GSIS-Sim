@@ -1,6 +1,6 @@
-# ビルドと実行の生成物
-build/
-runs/
+# ビルドと実行の生成物(根のフォルダだけ。validation/dsmc/runs/ は下で個別に扱う)
+/build/
+/runs/
 mcp_workspace/
 **/mcp_workspace/
 

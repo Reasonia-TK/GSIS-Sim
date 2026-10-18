@@ -1,0 +1,112 @@
+実行フォルダ : C:\Works\20261015_GSIS-PBC\validation\dsmc\runs\smoke
+実行ファイル : C:\Works\20261003_DSMC\dist\DSMC-Studio-Windows-20261007-release\bin\dsmc-cuda.exe
+引数         : inputs.tube
+Initializing AMReX (26.09-dirty)...
+Initializing CUDA...
+CUDA initialized with 1 device.
+AMReX (26.09-dirty) initialized
+Grid: 12 boxes on 1 MPI rank(s), GPU (1 device(s) in use)
+
+==================== DSMC setup ====================
+ species           : He  (m = 6.6500e-27 kg, d_ref = 2.3002e-10 m, T_ref = 2.7315e+02 K, omega = 6.6000e-01, alpha = 1.2600e+00)
+ collision model   : VHS / NTC,  internal energy: Larsen-Borgnakke (rotation on, vibration on)
+ collision partner : random in cell (no sub-cells)
+ initial gas       : n = 5.4107e+21 1/m^3,  T = 2.7315e+02 K,  u = (0.0000e+00, 0.0000e+00, 0.0000e+00) m/s
+ domain            : 2.2000e-02 x 8.5297e-03 x 8.5297e-03 m,  cells = 88 x 34 x 34
+ mean free path    : 7.8619e-04 m   (lambda/dx_min = 3.1448e+00,  Kn = lambda/L_min = 9.2171e-02)
+ mean coll. time   : 6.5423e-07 s   (tau/dt = 8.7093e+00)
+ mean thermal speed: 1.2017e+03 m/s  (cbar*dt/dx_min = 3.6108e-01)
+ Fnum              : 8.5136e+09 real molecules / simulator
+ initial particles : ~1.0173e+06  (1.0000e+01 per cell)
+ time step / steps : 7.5118e-08 s / 3000
+ bc x              : lo = inflow, hi = outflow
+ bc y              : lo = symmetry, hi = specular
+ bc z              : lo = symmetry, hi = specular
+ surface meshes    : 1, triangles = 24064, volume quadrature = 16^3 / cell, max bounces = 128
+ geometry materials: 1
+====================================================
+
+Resolved gas volume: 4.602709784520e-07 m^3
+Initial particles: 292543, T = 273.19 K
+
+    step       time[s]          Np       Ncoll       T[K]     wall[s]
+       0    0.0000e+00      292543           0     273.19         0.0
+  writing plotfile plt00000 (1 sample, instantaneous)
+Boundary injection since start/restart: accepted = 0, excluded = 0
+      75    5.6338e-06      279422       16012     271.15         3.4
+     150    1.1268e-05      270242       15266     271.79         6.8
+     225    1.6902e-05      265391       14961     272.05        10.2
+  writing plotfile plt00250 (250 samples)
+Boundary injection since start/restart: accepted = 180152, excluded = 80505
+     300    2.2535e-05      262996       14903     272.64        13.6
+     375    2.8169e-05      261428       14859     273.44        16.9
+     450    3.3803e-05      260467       14850     273.08        20.2
+  writing plotfile plt00500 (250 samples)
+Boundary injection since start/restart: accepted = 360417, excluded = 161188
+     525    3.9437e-05      259508       14805     272.84        23.5
+     600    4.5071e-05      259018       14771     273.51        26.9
+     675    5.0705e-05      259058       14798     274.30        30.2
+     750    5.6338e-05      258850       14800     273.62        33.5
+  writing plotfile plt00750 (250 samples)
+Boundary injection since start/restart: accepted = 540753, excluded = 241888
+     825    6.1972e-05      258356       14761     272.89        36.9
+     900    6.7606e-05      258450       14747     272.84        40.2
+     975    7.3240e-05      258412       14733     273.26        43.5
+  writing plotfile plt01000 (250 samples)
+Boundary injection since start/restart: accepted = 720992, excluded = 322418
+    1050    7.8874e-05      258283       14743     272.77        46.8
+    1125    8.4508e-05      258188       14768     273.48        50.1
+    1200    9.0142e-05      257947       14725     273.71        53.4
+  writing plotfile plt01250 (250 samples)
+Boundary injection since start/restart: accepted = 901201, excluded = 403142
+    1275    9.5775e-05      257734       14692     272.90        56.7
+    1350    1.0141e-04      257737       14652     272.24        60.0
+    1425    1.0704e-04      258020       14702     272.91        63.3
+    1500    1.1268e-04      257990       14733     272.81        66.6
+  writing plotfile plt01500 (250 samples)
+Boundary injection since start/restart: accepted = 1081523, excluded = 483731
+    1575    1.1831e-04      258089       14702     273.63        70.0
+    1650    1.2394e-04      258056       14726     273.68        73.3
+    1725    1.2958e-04      257802       14724     273.35        76.7
+  writing plotfile plt01750 (250 samples)
+Boundary injection since start/restart: accepted = 1261671, excluded = 564486
+    1800    1.3521e-04      257490       14677     273.56        80.0
+    1875    1.4085e-04      257555       14672     273.20        83.3
+    1950    1.4648e-04      257534       14657     273.75        86.6
+  writing plotfile plt02000 (250 samples)
+Boundary injection since start/restart: accepted = 1441910, excluded = 645103
+    2025    1.5211e-04      257830       14705     272.92        90.0
+    2100    1.5775e-04      257804       14692     272.84        93.3
+    2175    1.6338e-04      258091       14696     272.33        96.6
+    2250    1.6902e-04      258433       14733     272.82        99.9
+  writing plotfile plt02250 (250 samples)
+Boundary injection since start/restart: accepted = 1622150, excluded = 725755
+    2325    1.7465e-04      258360       14762     273.30       103.2
+    2400    1.8028e-04      258034       14737     273.30       106.5
+    2475    1.8592e-04      258231       14717     273.12       109.8
+  writing plotfile plt02500 (250 samples)
+Boundary injection since start/restart: accepted = 1802658, excluded = 806299
+    2550    1.9155e-04      258246       14746     273.18       113.1
+    2625    1.9718e-04      257947       14715     273.13       116.5
+    2700    2.0282e-04      258099       14717     272.99       119.8
+  writing plotfile plt02750 (250 samples)
+Boundary injection since start/restart: accepted = 1983225, excluded = 886855
+    2775    2.0845e-04      258065       14723     273.42       123.1
+    2850    2.1409e-04      258106       14701     273.47       126.5
+    2925    2.1972e-04      257710       14724     273.41       129.8
+    3000    2.2535e-04      257291       14646     272.88       133.1
+  writing plotfile plt03000 (250 samples)
+Boundary injection since start/restart: accepted = 2163421, excluded = 967550
+
+Finished: step = 3000, t = 2.2535e-04 s, particles = 257291, T = 272.88 K, wall time = 133.1 s
+Timing [s]: move 39.072912, inject 80.333451, redistribute 2.878654, collide 10.358640, sample 0.289010, diag/output 0.172930
+Total GPU global memory (MB): 16302
+Free  GPU global memory (MB): 14887
+[The         Arena] max space allocated (MB): 136
+[The         Arena] max space used      (MB): 129
+[The Managed Arena] max space allocated (MB): 8
+[The Managed Arena] max space used      (MB): 0
+[The  Pinned Arena] max space allocated (MB): 8
+[The  Pinned Arena] max space used      (MB): 1
+AMReX (26.09-dirty) finalized
+終了コード 0、経過 137.3 s。記録: C:\Works\20261015_GSIS-PBC\validation\dsmc\runs\smoke\run_initial.json

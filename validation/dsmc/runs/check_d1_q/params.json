@@ -1,0 +1,93 @@
+{
+  "case": "d1_q",
+  "note": "δ=1 の本計算(1/4 領域、Δx = R/8)",
+  "delta_rp": 1,
+  "Kn_inlet_paper": 0.8862269254527579,
+  "symmetry": "quarter",
+  "symmetry_factor": 4,
+  "L_ref_m": 0.001,
+  "T0_K": 273.15,
+  "gas": {
+    "species": "He",
+    "mass_kg": 6.65e-27,
+    "mu0_Pa_s": 1.916e-05,
+    "T_ref_K": 273.15,
+    "omega": 0.66,
+    "d_ref_m": 2.3002437913867657e-10,
+    "model": "VHS",
+    "builtin_He": {
+      "d_ref_m": 2.33e-10,
+      "T_ref_K": 273.0,
+      "mu_at_T0_Pa_s": 1.8675385109731106e-05,
+      "mu_ratio_paper_over_builtin": 1.0259493920699059
+    }
+  },
+  "p_in_Pa": 20.405250172835522,
+  "n_in_m3": 5.410749601840242e+21,
+  "rho_in_kg_m3": 3.598148485223761e-05,
+  "c_m_m_s": 1064.9921802106223,
+  "cbar_m_s": 1201.714989269296,
+  "t_ref_s": 9.389740305907515e-07,
+  "lambda_in_m": 0.000786194423409908,
+  "lambda_in_over_R": 0.786194423409908,
+  "tau_in_s": 6.542270259006707e-07,
+  "mdot_ref_kg_s": 3.396021578334968e-08,
+  "grid": {
+    "dx_over_R": 0.125,
+    "dx_m": 0.000125,
+    "dy_over_R": 0.1254375,
+    "dy_relative_shift": 0.0035,
+    "dy_note": "y, z のセル幅。未解像の切断セルを避けるため Δx から少しずらした値(check_cut_cells.py)",
+    "n_cell": [
+      176,
+      66,
+      66
+    ],
+    "prob_lo_over_R": [
+      -8.0,
+      0.0,
+      0.0
+    ],
+    "prob_hi_over_R": [
+      14.0,
+      8.278875000000001,
+      8.278875000000001
+    ],
+    "prob_lo_m": [
+      -0.008,
+      0.0,
+      0.0
+    ],
+    "prob_hi_m": [
+      0.014,
+      0.008278875000000002,
+      0.008278875000000002
+    ],
+    "max_grid_size": 128,
+    "total_cells": 766656,
+    "gas_cells": 234003.6893895413
+  },
+  "dsmc": {
+    "ppc_at_inlet_state": 16,
+    "fnum": 665123429.044891,
+    "dt_s": 4.694870152953758e-08,
+    "dt_over_tref": 0.05,
+    "subcell": "none",
+    "max_step": 8000,
+    "plot_int": 400,
+    "chk_int": 8000,
+    "physical_time_over_tref": 400.0
+  },
+  "estimates": {
+    "particles_initial": 3744059.0302326605,
+    "lambda_in_over_dx": 6.289555387279264,
+    "tau_in_over_dt": 13.934933333333328,
+    "cbar_dt_over_dx": 0.4513516668382051,
+    "mcs_over_lambda_in": 0.09539625029990363
+  },
+  "paper_table1": {
+    "reference": 0.197,
+    "gsis_pbc": 0.198,
+    "cis": 0.198
+  }
+}

@@ -62,7 +62,15 @@ arXiv:2610.07658v1 の GSIS-PBC(希薄気体の定常解法)を C++/CUDA で実�
 - 終わったら(失敗・中断しても)`runs\.gpu_lock` を消す
 - 小さな試験(VRAM 2 GB 未満)は順番待ちなしでよい
 
-### フェーズ 7 の担当(2026-10-17 から。フェーズ 5c は完了)
+### GUI への AI モデリングの組み込みの担当(2026-10-18 から)
+
+| 担当 | 編集してよい場所 |
+|---|---|
+| GUI の AI モデリング | `python/`(`gsis_tools.gui`、試験、依存の追加は extra `gui`。`gsis_tools.mcp` は GUI に必要な最小限の追加だけ)、`docs/gui.md`、`docs/gui_screenshots/`、`docs/mcp.md`(足したツールの追記だけ) |
+
+- git: リポジトリは https://github.com/Reasonia-TK/GSIS-Sim.git(`origin`、`main`)。担当者はコミットも push もしない。コミットと push は統括役が行う。
+
+### フェーズ 7 の担当(2026-10-17、完了)
 
 | 担当 | 編集してよい場所 | ビルド |
 |---|---|---|
