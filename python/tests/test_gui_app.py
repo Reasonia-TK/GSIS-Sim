@@ -94,10 +94,10 @@ def test_theme_tokens_in_stylesheet(gui):
     assert "mode=light" in text
 
 
-def test_window_has_four_pages(gui):
+def test_window_has_five_pages(gui):
     app, ctx, win = gui
-    assert win.nav.count() == 4 and win.stack.count() == 4
-    for i, key in enumerate(("case", "mesh", "run", "results")):
+    assert win.nav.count() == 5 and win.stack.count() == 5  # モデリング(AI)を足した(2026-10-18)
+    for i, key in enumerate(("case", "mesh", "ai", "run", "results")):
         win.show_page(key)
         app.processEvents()
         assert win.stack.currentIndex() == i

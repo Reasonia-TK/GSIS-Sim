@@ -131,6 +131,9 @@ class QtLogHandler(logging.Handler):
         super().__init__(level)
         self.bridge = _Bridge()
         self.setFormatter(logging.Formatter("%(message)s"))
+        from .ai.secrets import RedactingFilter
+
+        self.addFilter(RedactingFilter())  # 画面のログに API キーを出さない(念のため)
 
     @property
     def message(self):

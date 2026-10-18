@@ -585,9 +585,13 @@ class View3DTab(QWidget):
         view = self.view.scene().view if self.view.scene() else "focus"
         key = (res.bundle_id, req.mode, req.plane.normal if parallel else None)
         spec: FieldSpec | None = self.field_combo.currentData()
+        if spec is not None and spec.name != req.field:  # 場を変える前の要求の結果(説明は要求の場で書く)
+            spec = next((d for d in (self.field_combo.itemData(i) for i in range(self.field_combo.count()))
+                         if getattr(d, "name", None) == req.field), None)
         cap = DISPLAY_MODES[req.mode]
         if spec is not None and req.mode != "none":
-            cap = f"{spec.label}{component_suffix(spec, req.comp) if spec.n_comp > 1 else ''}。" + cap
+            known = req.comp == "mag" or str(req.comp).isdigit()  # 成分の欄を作り直している間の要求は "value"
+            cap = f"{spec.label}{component_suffix(spec, req.comp) if spec.n_comp > 1 and known else ''}。" + cap
         if res.streams is not None:
             cap += "。" + res.stream_info
         scene = Scene(items=items, view=view, focus_bounds=focus, caption=cap, parallel=parallel,

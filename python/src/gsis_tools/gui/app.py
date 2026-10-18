@@ -1,7 +1,7 @@
 """``gsis-gui`` の起動。
 
     uv run --project python --extra gui gsis-gui [--theme system|light|dark] [--case FILE.toml]
-                                                 [--results RUN_DIR] [--page case|mesh|run|results]
+                                                 [--results RUN_DIR] [--page case|mesh|ai|run|results]
                                                  [--solver EXE] [--offscreen] [--quit-after 秒]
 
 ``--offscreen`` は画面を出さずに動かす(Qt の offscreen プラットフォーム、3D は静止画の方式)。
@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="表示モード(既定は前回の選択、初回は system)")
     ap.add_argument("--case", help="起動時に開くケース定義(TOML)")
     ap.add_argument("--results", help="起動時に読み込む出力フォルダ")
-    ap.add_argument("--page", choices=("case", "mesh", "run", "results"), default=None, help="最初に出す画面")
+    ap.add_argument("--page", choices=("case", "mesh", "ai", "run", "results"), default=None, help="最初に出す画面")
     ap.add_argument("--solver", help="gsis-solver の実行ファイル(既定は build/release/src/gsis-solver.exe)")
     ap.add_argument("--offscreen", action="store_true", help="画面を出さずに動かす(確認用)")
     ap.add_argument("--quit-after", type=float, default=None, metavar="秒", help="指定した秒数で終わる(起動の確認用)")

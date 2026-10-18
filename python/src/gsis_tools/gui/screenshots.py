@@ -143,11 +143,19 @@ def main(argv: list[str] | None = None) -> int:
         if rp.start():
             wait(lambda: rp.proc is None, 300)
         shot("05_run_smoke_cpu")
-        # フェーズ 4 の run がないときの表示
-        if "run" not in ctx.subcommands():
-            rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("run"))
-            shot("06_run_missing_subcommand")
-            rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
+        # ないサブコマンドの表示。いまのソルバーには 3 つともあるので、pbc-run のない古いソルバーを装って撮る
+        subs = ctx.subcommands()
+        missing = "run" if "run" not in subs else "pbc-run"
+        saved_subs = ctx._subcommands
+        ctx._subcommands = {k: v for k, v in subs.items() if k != missing}
+        rp.refresh_subcommands()
+        win._update_solver_label()
+        rp.sub_combo.setCurrentIndex(rp.sub_combo.findData(missing))
+        shot("06_run_missing_subcommand")
+        ctx._subcommands = saved_subs
+        rp.refresh_subcommands()
+        win._update_solver_label()
+        rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
 
     # 5. 結果: 3D・流線・任意断面・線上の分布・中心線・Table 1・履歴
     rs = win.results_page

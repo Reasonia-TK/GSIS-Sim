@@ -46,6 +46,7 @@ python -m gsis_tools.mcp --workspace ...                           # python/.ven
 | `--allow-python` | `run_python`(gmsh の Python スクリプトの実行)を有効にする(§11。危険) |
 | `--threads N` | gmsh のスレッド数(既定は min(8, CPU 数)) |
 | `--log-level` | 標準エラーに出すログの水準(既定 WARNING) |
+| `--gui-tools` | GUI 専用のツール `gui_surface`(§6.7)も一覧に出す。GUI(`gsis-gui` のモデリング(AI)の画面)が子プロセスとして起動するときに付ける(2026-10-18 に追加) |
 
 - 標準出力は JSON-RPC の通信路(1 行 1 メッセージ、改行は LF)。ログと OpenCASCADE の出力(STEP の統計など)は標準エラーに出る(§12.2)
 - クライアントが標準入力を閉じると終わる。MCP の initialize の手順で、プロトコル 2025-06-18(生の JSON-RPC)と 2025-11-25(SDK のクライアント)を確かめた
@@ -117,6 +118,8 @@ claude mcp remove gsis-gmsh
 ## 6. ツール一覧
 
 31 個(`--allow-python` のときは 32 個)。`*` は必須の引数。tools/list の応答は約 29 KB。
+
+`--gui-tools` で起動したときは、GUI 専用の `gui_surface`(§6.7)が 1 つ増える(2026-10-18 に追加)。
 
 ### 6.1 モデル
 
@@ -215,6 +218,15 @@ claude mcp remove gsis-gmsh
 | `mesh_quality` | | `.pmesh` と同じ形に変換して、セル数・要素の内訳・体積・パッチ(面の数と面積)・h_V・最大辺・非直交角(平均・99%・最大)・歪み・体積比・形式の検査 |
 | `export_pmesh` | `path*`、`patch_order`、`renumber`(既定 true、逆 Cuthill–McKee)、`report`(.md)、`vtu`、`boundary_vtu` | `.pmesh`(座標は m)と検査の結果、セル・面・節点の数、体積 [m³]、パッチの面の数と面積 [m²] |
 | `export` | `path*`(.step・.stp・.iges・.igs・.brep・.stl・.msh・.vtu)、`binary` | 形状(STEP・IGES・BREP)とメッシュ(STL・MSH 4.1・VTU)。MSH・STL にはパッチ名の Physical Group(付いていない面は `unassigned`)と体積 `fluid` |
+
+### 6.7 GUI 専用(`--gui-tools` のときだけ。2026-10-18 に追加)
+
+| ツール | 主な引数 | 返り値 |
+|---|---|---|
+| `gui_surface` | `known`(前回の `key`) | GUI の 3D 表示用の表面: 三角形(`render` と同じもの。メッシュがあればその表面、なければ粗い面のメッシュ)と三角形ごとの面の番号、面の一覧(番号・種類・境界か・面積・重心)、パッチ(名前・kind・面)、`key`(形状とメッシュの版)、`source`(geometry / mesh)。配列はリトルエンディアンの生のバイト列を base64 にしたもの(点 float32 (N, 3)、三角形 int32 (M, 3)、面の番号 int32 (M,))。`known` が今の `key` と同じなら配列を省き `unchanged: true` を返す(パッチの対応は毎回返す) |
+
+- AI には見せない: tools/list の `_meta` に `{"gsis-pbc/gui-only": true}` の印を付け、GUI は AI に渡すツールの一覧から外す。`--gui-tools` なしのサーバーでは一覧に出ず、呼ぶと「未知のツール」。batch の中では使えない
+- 読むだけの手順(履歴に残らない)。管の形状で三角形 8,176 個・応答 約 240 KB・0.14 s(1 回目)
 
 ## 7. 使い方の例
 

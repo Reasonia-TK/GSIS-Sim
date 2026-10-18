@@ -50,6 +50,7 @@ class SceneItem:
     n_colors: int = 256
     render_lines_as_tubes: bool = False
     scalar_bar_pos: str = "right"  # "right" / "left"(色の帯が 2 本のとき)
+    pickable: bool = True  # マウスで選べるか(面の選択で、線などを選ばないように)
 
 
 @dataclass
@@ -61,6 +62,7 @@ class Scene:
     caption: str = ""
     parallel: bool = False
     plane_normal: tuple[float, float, float] | None = None  # 「断面に垂直」に見るときの向き
+    labels: list[tuple[tuple[float, float, float], str]] = field(default_factory=list)  # 点の文字(ASCII)
 
 
 # VTK の色の帯の題で描けない文字の置き換え(2026-10-16 に描いて確かめた: 「|」「∣」「‖」と ρ・σ は
@@ -115,7 +117,14 @@ def apply_scene(plotter: Any, scene: Scene, t: dict[str, str], keep_camera: bool
             kw.update(show_edges=True, edge_color=item.edge_color or t["border"])
         if item.style:
             kw["style"] = item.style
+        if not item.pickable:
+            kw["pickable"] = False
         plotter.add_mesh(item.mesh, **kw)
+    if scene.labels:
+        pts = np.array([p for p, _ in scene.labels], dtype=float).reshape(-1, 3)
+        plotter.add_point_labels(pts, [vtk_safe_text(s) for _, s in scene.labels], font_size=11,
+                                 text_color=t["text"], shape_color=t["surface"], shape_opacity=0.75,
+                                 point_size=1, show_points=False, always_visible=True, pickable=False)
     for bar in list(getattr(plotter, "scalar_bars", {}).values()):
         try:  # 色の帯・題・目盛りの背景(場面の上に重なっても読めるように)
             bar.SetDrawBackground(True)

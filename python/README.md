@@ -5,6 +5,7 @@ GSIS-PBC の前処理・後処理・検証ツール(メッシュの生成・変�
 
     uv run --project python gsis-tools --help
     uv run --project python --extra gui gsis-gui
+    uv run --project python --extra gui gsis-gui --page ai         # モデリング(AI)の画面(extra gui に AI の SDK と MCP も入る)
     uv run --project python --extra mcp gsis-mcp --workspace mcp_workspace   # MCP サーバー(stdio)
     uv run --project python pytest python/tests                # extra gui・mcp がなければ、それぞれの試験の多くは飛ばす
     uv run --project python --extra gui pytest python/tests    # GUI の試験も(QT_QPA_PLATFORM=offscreen で)

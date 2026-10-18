@@ -279,7 +279,7 @@ class RunPage(QWidget):
         if not self.ctx.solver_ok():
             self.sub_note.set_status("error", f"ソルバーが見つかりません: {self.ctx.solver_path()}(上のツールバーで選ぶ)")
         elif not self.available(name):
-            hint = "(フェーズ 4 で追加される予定)" if name == "run" else ""
+            hint = "(run はフェーズ 4 で追加済みなので、それより前に作ったソルバーです)" if name == "run" else ""
             self.sub_note.set_status("warning", f"このソルバーには {name} サブコマンドがありません{hint}。"
                                                  "ソルバーを作り直したら「サブコマンドを読み直す」を押してください")
         else:

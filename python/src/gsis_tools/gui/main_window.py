@@ -1,4 +1,4 @@
-"""メインウィンドウ: 左の一覧で 4 つの画面(ケース設定・メッシュ・実行・結果)を切り替える。"""
+"""メインウィンドウ: 左の一覧で 5 つの画面(ケース設定・メッシュ・モデリング(AI)・実行・結果)を切り替える。"""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .context import AppContext
+from .pages.ai_page import AiPage
 from .pages.case_page import CasePage
 from .pages.mesh_page import MeshPage
 from .pages.results_page import ResultsPage
@@ -29,7 +30,7 @@ from .pages.run_page import RunPage
 from .paths import display_path, solver_exe_name
 from .theme import MODE_LABELS, MODES
 
-PAGES = (("case", "ケース設定"), ("mesh", "メッシュ"), ("run", "実行"), ("results", "結果"))
+PAGES = (("case", "ケース設定"), ("mesh", "メッシュ"), ("ai", "モデリング(AI)"), ("run", "実行"), ("results", "結果"))
 
 
 class MainWindow(QMainWindow):
@@ -77,9 +78,11 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.case_page = CasePage(ctx)
         self.mesh_page = MeshPage(ctx, view_backend=view_backend)
+        self.ai_page = AiPage(ctx, view_backend=view_backend)
         self.run_page = RunPage(ctx)
         self.results_page = ResultsPage(ctx, view_backend=view_backend)
-        self.pages = {"case": self.case_page, "mesh": self.mesh_page, "run": self.run_page, "results": self.results_page}
+        self.pages = {"case": self.case_page, "mesh": self.mesh_page, "ai": self.ai_page, "run": self.run_page,
+                      "results": self.results_page}
         for i, (key, label) in enumerate(PAGES):
             item = QListWidgetItem(f"{i + 1}  {label}")
             item.setData(Qt.ItemDataRole.UserRole, key)
@@ -97,6 +100,7 @@ class MainWindow(QMainWindow):
         self.case_page.case_saved.connect(self.run_page.set_case)
         self.case_page.case_loaded.connect(self.run_page.set_case)
         self.mesh_page.mesh_selected.connect(self._use_mesh)
+        self.ai_page.open_mesh.connect(self._open_mesh_from_ai)
         self.run_page.open_results.connect(self._open_results)
         self.run_page.run_finished.connect(lambda _d, _c: self.results_page.refresh_run_list())
         for p in self.pages.values():
@@ -137,6 +141,12 @@ class MainWindow(QMainWindow):
         self.show_page("case")
         self.show_status(f"ケースのメッシュを {display_path(path, self.ctx.root)} にしました(保存すると TOML に書く)")
 
+    def _open_mesh_from_ai(self, path: str) -> None:
+        """モデリング(AI)で書き出した .pmesh を、メッシュの画面で開く。"""
+        self.show_page("mesh")
+        if self.mesh_page.load_mesh(path):
+            self.show_status(f"AI が書き出したメッシュを開いています: {display_path(path, self.ctx.root)}")
+
     def _open_results(self, out_dir: str) -> None:
         self.show_page("results")
         self.results_page.load(Path(out_dir))
@@ -144,6 +154,13 @@ class MainWindow(QMainWindow):
     def closeEvent(self, ev) -> None:  # noqa: N802
         if self.run_page.proc is not None:
             r = QMessageBox.question(self, "計算を止めますか", "実行中の計算があります。止めて終了しますか?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+            if r != QMessageBox.StandardButton.Yes:
+                ev.ignore()
+                return
+        if self.ai_page.busy:
+            r = QMessageBox.question(self, "AI の作業を止めますか", "AI の作業の途中です。止めて終了しますか?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
             if r != QMessageBox.StandardButton.Yes:
@@ -162,4 +179,5 @@ class MainWindow(QMainWindow):
     def shutdown(self) -> None:
         self.run_page.shutdown()
         self.mesh_page.shutdown()
+        self.ai_page.shutdown()
         self.results_page.shutdown()

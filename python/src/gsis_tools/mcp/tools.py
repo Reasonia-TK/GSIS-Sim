@@ -335,6 +335,10 @@ class ExportArgs(Args):
     binary: bool = Field(False, description=".stl・.msh をバイナリで書く")
 
 
+class GuiSurfaceArgs(Args):
+    known: str | None = Field(None, description="前回の key(形状とメッシュが変わっていなければ三角形を省く)")
+
+
 # ---------------------------------------------------------------------------
 # ツールの一覧
 # ---------------------------------------------------------------------------
@@ -435,8 +439,13 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("export", "書き出し", ExportArgs,
              "形状(STEP・IGES・BREP)やメッシュ(STL・MSH 4.1・VTU)を書く。STEP・IGES は単位付き(読むときに換算される)、"
              "BREP・STL・MSH・VTU の座標はモデルの単位の数値のまま。MSH と STL にはパッチ名(Physical Group)が入る。"),
+    # GUI 専用(サーバーを --gui-tools で起動したときだけ一覧に出す。GUI は AI に渡すツールの一覧から外す)
+    ToolSpec("gui_surface", "GUI の表示用の表面", GuiSurfaceArgs,
+             "GUI 専用。3D 表示用に、表面の三角形(面の番号付き)・面の情報・パッチを返す。"),
 ]
 TOOL_BY_NAME = {t.name: t for t in TOOLS}
+GUI_ONLY_TOOLS = frozenset({"gui_surface"})
+GUI_ONLY_META = {"gsis-pbc/gui-only": True}  # tools/list の _meta に入れる印(クライアントが AI に渡さないため)
 
 
 def annotations_for(spec: ToolSpec) -> dict[str, Any]:
@@ -543,8 +552,9 @@ def normalize(tool: str, args: dict[str, Any] | None) -> dict[str, Any]:
     return data
 
 
-def available_tools(allow_python: bool) -> list[ToolSpec]:
-    return [t for t in TOOLS if allow_python or t.name != "run_python"]
+def available_tools(allow_python: bool, gui_tools: bool = False) -> list[ToolSpec]:
+    return [t for t in TOOLS
+            if (allow_python or t.name != "run_python") and (gui_tools or t.name not in GUI_ONLY_TOOLS)]
 
 
 INSTRUCTIONS = """\

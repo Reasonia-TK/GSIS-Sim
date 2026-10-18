@@ -190,7 +190,7 @@ def explain_failure(exit_code: int, output: str, subcommand: str | None = None) 
         return "正常に終了しました"
     if "知らないサブコマンド" in output:
         name = subcommand or "指定した"
-        extra = "(フェーズ 4 で追加される予定です)" if name == "run" else ""
+        extra = "(run はフェーズ 4 で追加済みなので、それより前に作ったソルバーです)" if name == "run" else ""
         return f"このソルバーには {name} サブコマンドがありません{extra}。ソルバーを作り直すか、別のサブコマンドを選んでください"
     if exit_code == EXIT_USAGE:
         return "引数の誤りで止まりました(ログの「引数の誤り」の行を見てください)"

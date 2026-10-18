@@ -15,7 +15,7 @@ arXiv:2610.07658v1 の GSIS-PBC(希薄気体の定常解法)を C++/CUDA で実�
 | `docs/reproduction_report.md` | 再現レポート(管 4 条件の結果、論文との違い、受け入れ基準の達成状況、考察) |
 | `docs/progress.md` | 進捗ボード(現状、次にやること、利用上限の後の再開手順) |
 | `docs/phase*_report.md`、`docs/design_gsis.md` | 各フェーズの作業記録と、GSIS の結合の設計 |
-| `docs/gui.md` | GUI の使い方 |
+| `docs/gui.md` | GUI の使い方(AI モデリングの画面、API の接続とキーの扱いを含む) |
 | `docs/mcp.md` | AI モデリング用 MCP サーバー(gmsh の上の薄いツール層)の使い方とツールの一覧 |
 | `docs/python_tools.md` | Python ツール(メッシュ生成・変換・検査)の使い方 |
 | `docs/dsmc_survey.md` | DSMC による検証の調査と計画(ユーザーの DSMC コードの使い方) |

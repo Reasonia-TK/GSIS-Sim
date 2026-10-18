@@ -19,6 +19,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="読み込み(import_cad・model_load)を許すフォルダを足す(繰り返し可)")
     ap.add_argument("--allow-python", action="store_true",
                     help="run_python(gmsh の Python スクリプトの実行)を有効にする。任意のコードが動くので注意")
+    ap.add_argument("--gui-tools", action="store_true",
+                    help="GUI 専用のツール(gui_surface)も一覧に出す(GUI が子プロセスとして起動するとき)")
     ap.add_argument("--threads", type=int, default=None, help="gmsh のスレッド数(既定は min(8, CPU 数))")
     ap.add_argument("--log-level", default="WARNING", choices=("DEBUG", "INFO", "WARNING", "ERROR"),
                     help="標準エラーに出すログの水準")

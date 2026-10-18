@@ -54,10 +54,11 @@ OP_KINDS: dict[str, str] = {
     "assign_patch": "setting", "remove_patch": "setting", "mesh_settings": "setting", "mesh_refine": "setting",
     "model_info": "query", "measure": "query", "list_faces": "query", "check_geometry": "query",
     "list_patches": "query", "render": "query", "mesh_quality": "query",
+    "gui_surface": "query",  # GUI 専用(--gui-tools のときだけ一覧に出る。AI には見せない)
     "mesh_generate": "action", "export_pmesh": "action", "export": "action", "model_save": "action",
     "model_new": "model", "model_load": "model", "undo": "model", "batch": "model",
 }
-BATCH_EXCLUDED = {"model_new", "model_load", "model_save", "undo", "batch"}
+BATCH_EXCLUDED = {"model_new", "model_load", "model_save", "undo", "batch", "gui_surface"}
 NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$")
 MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 REF_RE = re.compile(r"^([vscp]):(\d+)$")
@@ -119,6 +120,7 @@ class ModelEngine:
         self._render_seq = 0
         self._record_args: dict[str, Any] | None = None
         self._refresh_faces: set[int] | None = None
+        self._mesh_serial = 0  # メッシュを作るたびに増やす(GUI の表示の作り直しの判定に使う)
         self._reset_state("model", "mm")
 
     # ------------------------------------------------------------------
@@ -1481,6 +1483,7 @@ class ModelEngine:
         stats["settings"] = {"size_max": rnd(eff["size_max"], 6), "size_min": eff["size_min"], "fields": eff["fields"]}
         stats["unit"] = self.unit
         self._mesh = MeshState(dim, self._geom_version, self._settings_version, stats)
+        self._mesh_serial += 1
         un = [t for t in self._boundary_faces() if t not in self._patch_of()]
         if un:
             stats["unassigned_faces"] = un[:30]
@@ -1895,10 +1898,65 @@ class ModelEngine:
         out["triangles"] = int(ntri)
         return out
 
+    # ==================================================================
+    # GUI 専用(AI には見せない)
+    # ==================================================================
+
+    def op_gui_surface(self, *, known: str | None = None) -> dict[str, Any]:
+        """GUI の 3D 表示用の表面: 三角形と、三角形ごとの面の番号、面の情報、パッチ。
+
+        三角形は render と同じもの(メッシュがあればその表面、なければ粗い面のメッシュ)。配列は
+        リトルエンディアンの生のバイト列を base64 にして返す(点 float32 (N, 3)、三角形 int32 (M, 3)、
+        面の番号 int32 (M,))。``key`` は形状とメッシュの版で、前回の ``key`` を ``known`` に渡すと、
+        変わっていなければ配列を省く(パッチの対応は毎回返す)。
+        """
+        mesh_now = self._mesh is not None and self._mesh.geom_version == self._geom_version
+        key = f"{self._model_seq}:{self._geom_version}:{self._mesh_serial if mesh_now else 0}"
+        infos = self.face_infos()
+        out: dict[str, Any] = {
+            "key": key, "model": self.name, "unit": self.unit,
+            "steps": len({e.group for e in self.history}), "volumes": len(self._volumes()),
+            "source": "mesh" if mesh_now else "geometry", "mesh": self._mesh_status(),
+            "patches": [{"name": p.name, "kind": p.kind, "faces": sorted(p.faces)} for p in self.patches.values()],
+            "faces": [{"id": t, "type": f.type, "boundary": f.boundary, "area": rnd(f.area, 7),
+                       "c": rnd(f.centroid, 6)} for t, f in sorted(infos.items())],
+        }
+        if known is not None and known == key:
+            out["unchanged"] = True
+            return out
+        tri, fid, nodes, ok, msg = self._tessellate() if infos else (np.zeros((0, 3, 3)), np.zeros(0, np.int64),
+                                                                     np.zeros((0, 3), np.int64), True, None)
+        if tri.shape[0]:
+            uq, inv = np.unique(np.asarray(nodes).reshape(-1), return_inverse=True)
+            inv = inv.reshape(-1)
+            pts = np.zeros((uq.size, 3))
+            pts[inv] = np.asarray(tri).reshape(-1, 3)
+            tris = inv.reshape(-1, 3)
+        else:
+            pts = np.zeros((0, 3))
+            tris = np.zeros((0, 3), np.int64)
+        out["points"] = _pack_array(pts, "<f4")
+        out["triangles"] = _pack_array(tris, "<i4")
+        out["face_ids"] = _pack_array(fid, "<i4")
+        out["n_points"] = int(pts.shape[0])
+        out["n_triangles"] = int(tris.shape[0])
+        if not ok:
+            out["warning"] = msg
+        return out
+
 
 # ---------------------------------------------------------------------------
 # 補助
 # ---------------------------------------------------------------------------
+
+
+def _pack_array(a, dtype: str) -> dict[str, Any]:
+    """配列を JSON で送れる形にする(リトルエンディアンの生のバイト列を base64 に)。"""
+    import base64
+
+    arr = np.ascontiguousarray(np.asarray(a), dtype=np.dtype(dtype))
+    return {"dtype": np.dtype(dtype).name, "shape": list(arr.shape),
+            "data": base64.b64encode(arr.tobytes()).decode("ascii")}
 
 
 class _NameAPI:

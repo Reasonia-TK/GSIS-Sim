@@ -22,7 +22,7 @@ from .. import __version__
 from .engine import ModelEngine
 from .errors import ToolFailure
 from .stdio_guard import WireFds, wire_streams
-from .tools import INSTRUCTIONS, annotations_for, available_tools, input_schema, normalize
+from .tools import GUI_ONLY_META, GUI_ONLY_TOOLS, INSTRUCTIONS, annotations_for, available_tools, input_schema, normalize
 from .workspace import Workspace
 
 logger = logging.getLogger("gsis_tools.mcp")
@@ -66,10 +66,10 @@ def error_to_mcp(err: dict[str, Any]) -> types.CallToolResult:
 class ToolRunner:
     """エンジンと、gmsh 専用のスレッド。"""
 
-    def __init__(self, engine: ModelEngine, *, allow_python: bool):
+    def __init__(self, engine: ModelEngine, *, allow_python: bool, gui_tools: bool = False):
         self.engine = engine
         self.allow_python = allow_python
-        self.specs = available_tools(allow_python)
+        self.specs = available_tools(allow_python, gui_tools)
         self.names = {s.name for s in self.specs}
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="gmsh")
         engine.arg_normalizer = normalize
@@ -77,7 +77,8 @@ class ToolRunner:
     def list_tools(self) -> list[types.Tool]:
         return [
             types.Tool(name=s.name, title=s.title, description=s.description, input_schema=input_schema(s),
-                       annotations=types.ToolAnnotations(**annotations_for(s)))
+                       annotations=types.ToolAnnotations(**annotations_for(s)),
+                       meta=dict(GUI_ONLY_META) if s.name in GUI_ONLY_TOOLS else None)
             for s in self.specs
         ]
 
@@ -142,7 +143,7 @@ def serve(args, fds: WireFds) -> int:
     ws = Workspace(args.workspace, args.read_dir)
     logger.info("作業フォルダ: %s", ws.root)
     engine = ModelEngine(ws, allow_python=args.allow_python, threads=args.threads)
-    runner = ToolRunner(engine, allow_python=args.allow_python)
+    runner = ToolRunner(engine, allow_python=args.allow_python, gui_tools=getattr(args, "gui_tools", False))
     server = build_server(runner)
     try:
         anyio.run(_serve, server, fds)
