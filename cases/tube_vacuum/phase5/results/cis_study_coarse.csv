@@ -1,0 +1,17 @@
+tag,delta,variant,sets,iterations,converged,it_1e-4,it_1e-5,it_1e-6,time_per_iteration_s,wall_time_s,Mdot_inlet,Mdot_outlet
+d1_base,1,base,,342,True,205,342,,0.0740,25.6,0.19507,0.19765
+d1_oct,1,oct,sweep_order=octant,256,True,159,256,,0.0678,17.6,0.19533,0.19733
+d1_octP1,1,octP1,sweep_order=octant sweep_blocks=1,184,True,121,184,,0.1320,24.5,0.19570,0.19710
+d1_d13,1,d13,sweep_order=dir13,277,True,169,277,,0.0665,18.6,0.19517,0.19750
+d1_in2,1,in2,inner_sweeps=2,237,True,151,237,,0.1396,33.3,0.19548,0.19727
+d1_in4,1,in4,inner_sweeps=4,189,True,124,189,,0.2708,51.4,0.19568,0.19711
+d1_in2w,1,in2w,inner_sweeps=2 inner_wall_update=true,211,True,136,211,,0.1457,30.9,0.19564,0.19715
+d1_in4w,1,in4w,inner_sweeps=4 inner_wall_update=true,141,True,95,141,,0.2884,40.9,0.19567,0.19693
+d1_oct_in2w,1,oct_in2w,sweep_order=octant inner_sweeps=2 inner_wall_update=true,164,True,108,164,,0.1333,22.0,0.19566,0.19701
+d1_oct_in4w,1,oct_in4w,sweep_order=octant inner_sweeps=4 inner_wall_update=true,119,True,81,119,,0.2640,31.6,0.19633,0.19686
+d1_d13_in2w,1,d13_in2w,sweep_order=dir13 inner_sweeps=2 inner_wall_update=true,175,True,114,175,,0.1304,23.0,0.19566,0.19709
+d1_oct_bp2,1,oct_bp2,sweep_order=octant block_passes=2,199,True,129,199,,0.1013,20.4,0.19566,0.19714
+d1_oct_bp3,1,oct_bp3,sweep_order=octant block_passes=3,191,True,125,191,,0.1316,25.3,0.19570,0.19711
+d1_oct_in2w_bp2,1,oct_in2w_bp2,sweep_order=octant inner_sweeps=2 inner_wall_update=true block_passes=2,134,True,91,134,,0.2000,27.0,0.19578,0.19691
+d1_oct_damp0,1,oct_damp0,sweep_order=octant interface_damping=0,492,True,390,492,,0.0687,34.1,0.19636,0.19645
+d1_oct_damp0.25,1,oct_damp0.25,sweep_order=octant interface_damping=0.25,244,True,152,244,,0.0686,17.0,0.19541,0.19728

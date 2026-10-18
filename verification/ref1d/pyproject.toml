@@ -1,0 +1,16 @@
+[project]
+name = "ref1d"
+version = "0.1.0"
+description = "平行平板間の 1 次元参照ソルバー(Shakhov モデル)。GSIS-PBC の 3 次元ソルバーの検証用"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numba>=0.68.0",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"

@@ -1,0 +1,63 @@
+# 粗い管の δ_rp = 1000(c1000_base.toml)で、入口の流入の接線速度を論文どおり内側から外挿したもの(試験用)。
+# cases/tube_vacuum/phase5/tube_delta1000_p5.toml から、フェーズ 5b で既定値になった [kinetic] の項目
+# (sweep_order・inner_sweeps・inner_wall_update・block_passes・equilibrium・gsis_negative_check)を除いたもの。
+# 実行: gsis-solver run <この TOML> --init-from runs/phase5/init/d1000.csv(NSF の初期化を省く)
+# フェーズ 5a の結果: 7〜9 回目に真空の出口の近くで負の密度・温度(docs/phase5_report.md §6)
+
+[case]
+name = "c1000_tanext"
+mesh = "../kinetic/mesh/tube_hex_coarse.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(管半径)
+T0 = 273.15                         # K
+delta_rp = 1000
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+tangential_velocity = "extrapolate"
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5
+max_iterations = 60
+filter_length = 1.0
+
+[kinetic]
+sweep_blocks = 0
+velocity_chunk = 2304             # VRAM を 2 GB 未満に(f 1.0 GB + 作業領域 0.53 GB)
+positivity_limiter = true
+limiter_k = 1.0
+
+[macro]
+advection = "upwind2"
+boundary_reconstruction = "cell"
+hot_interpolation = "face"
+gsis_freeze_kn = 1.0
+gsis_cfl_start = 5.0
+init_iterations = 50
+init_advection = "upwind1"

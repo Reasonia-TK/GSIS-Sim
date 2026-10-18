@@ -1,0 +1,49 @@
+# 平板のクエット流(couette_nl、Kn = 10、50 セル、sym_y は並進周期、sym_z は対称面)。make_cases.py で生成。
+# 参照解: verification/ref1d(results/summary_vmid30.csv は同じ ξx 格子の値)
+
+[case]
+name = "slab_couette_nl_Kn10_nx50"
+mesh = "mesh/slab_nx50.pmesh"
+mode = "cis"
+
+[gas]
+molecular_mass = 6.65e-27
+mu_ref = 1.916e-5
+T_ref = 273.15
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3
+T0 = 273.15
+Kn = 10.0
+
+[[boundary]]
+patch = "wall_left"
+type = "diffuse_wall"
+temperature = 273.15
+velocity = [0.0, -753.0631925375766, 0.0]
+
+[[boundary]]
+patch = "wall_right"
+type = "diffuse_wall"
+temperature = 273.15
+velocity = [0.0, 753.0631925375766, 0.0]
+
+[[boundary]]
+patch = "sym_y"
+type = "periodic_slab"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+tolerance = 1.0e-9
+
+[kinetic]
+sweep_blocks = 1
+max_iterations = 200000

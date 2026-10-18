@@ -1,0 +1,382 @@
+{
+ "format": "gsis-mcp-model",
+ "version": 1,
+ "name": "dgl",
+ "unit": "mm",
+ "saved": "2026-10-17T15:17:24+00:00",
+ "generator": "gsis_tools.mcp",
+ "gmsh": "4.15.2",
+ "history": [
+  {
+   "tool": "add_profile",
+   "args": {
+    "plane": "xz",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u_axis": null,
+    "v_axis": null,
+    "outer": {
+     "points": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       100.0,
+       0.0
+      ],
+      [
+       100.0,
+       100.0
+      ],
+      [
+       3.5,
+       100.0
+      ],
+      [
+       5.2,
+       108.5
+      ],
+      [
+       100.0,
+       108.5
+      ],
+      [
+       100.0,
+       111.5
+      ],
+      [
+       5.8,
+       111.5
+      ],
+      [
+       7.5,
+       120.0
+      ],
+      [
+       100.0,
+       120.0
+      ],
+      [
+       100.0,
+       220.0
+      ],
+      [
+       0.0,
+       220.0
+      ],
+      [
+       0.0,
+       90.0
+      ],
+      [
+       50.0,
+       90.0
+      ],
+      [
+       50.0,
+       88.0
+      ],
+      [
+       0.0,
+       88.0
+      ]
+     ],
+     "start": null,
+     "segments": null,
+     "circle": null
+    },
+    "holes": [],
+    "name": "meridian"
+   },
+   "group": 8
+  },
+  {
+   "tool": "revolve",
+   "args": {
+    "entities": [
+     "meridian"
+    ],
+    "axis_point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis_dir": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "angle_deg": 360.0,
+    "name": "dgl"
+   },
+   "group": 9
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "inlet",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": "cylinder",
+     "on_plane": null,
+     "normal": null,
+     "in_box": [
+      -101.0,
+      -101.0,
+      108.0,
+      101.0,
+      101.0,
+      112.0
+     ],
+     "contains_point": null,
+     "radius": 100.0,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 10
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "outlet_top",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": {
+      "point": [
+       0.0,
+       0.0,
+       220.0
+      ],
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     },
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 11
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "outlet_bottom",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": {
+      "point": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     },
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 12
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "wall",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": null,
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": true,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 13
+  },
+  {
+   "tool": "mesh_settings",
+   "args": {
+    "size_max": 6.0,
+    "size_min": 0.5,
+    "curvature_points": 12,
+    "algorithm_3d": null,
+    "algorithm_2d": null,
+    "optimize": null,
+    "extend_from_boundary": null,
+    "threads": null,
+    "reset": false
+   },
+   "group": 15
+  },
+  {
+   "tool": "mesh_refine",
+   "args": {
+    "name": "passage",
+    "target": "cylinder",
+    "select": null,
+    "size": 1.0,
+    "size_far": null,
+    "dist_min": 0.0,
+    "dist_max": null,
+    "box": null,
+    "center": null,
+    "radius": 10.0,
+    "base": [
+     0.0,
+     0.0,
+     97.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     26.0
+    ],
+    "thickness": 0.0,
+    "sampling": null,
+    "remove": false
+   },
+   "group": 16
+  },
+  {
+   "tool": "mesh_refine",
+   "args": {
+    "name": "slot",
+    "target": "box",
+    "select": null,
+    "size": 1.6,
+    "size_far": null,
+    "dist_min": 0.0,
+    "dist_max": null,
+    "box": [
+     -101.0,
+     -101.0,
+     108.0,
+     101.0,
+     101.0,
+     112.0
+    ],
+    "center": null,
+    "radius": null,
+    "base": null,
+    "axis": null,
+    "thickness": 6.0,
+    "sampling": null,
+    "remove": false
+   },
+   "group": 17
+  },
+  {
+   "tool": "mesh_refine",
+   "args": {
+    "name": "wafer",
+    "target": "faces",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": null,
+     "normal": null,
+     "in_box": [
+      -51.0,
+      -51.0,
+      87.5,
+      51.0,
+      51.0,
+      90.5
+     ],
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "size": 1.6,
+    "size_far": 6.0,
+    "dist_min": 0.5,
+    "dist_max": 20.0,
+    "box": null,
+    "center": null,
+    "radius": null,
+    "base": null,
+    "axis": null,
+    "thickness": 0.0,
+    "sampling": null,
+    "remove": false
+   },
+   "group": 18
+  }
+ ]
+}

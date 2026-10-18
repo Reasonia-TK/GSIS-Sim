@@ -1,0 +1,47 @@
+# 平板の熱伝導(heat_nl、Kn = 0.01、200 セル、側面は対称面)。make_cases.py で生成。
+# 参照解: verification/ref1d(results/summary_vmid30.csv は同じ ξx 格子の値)
+
+[case]
+name = "slab_heat_nl_Kn0p01_nx200"
+mesh = "mesh/slab_nx200.pmesh"
+mode = "cis"
+
+[gas]
+molecular_mass = 6.65e-27
+mu_ref = 1.916e-5
+T_ref = 273.15
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3
+T0 = 273.15
+Kn = 0.01
+
+[[boundary]]
+patch = "wall_left"
+type = "diffuse_wall"
+temperature = 136.575
+
+[[boundary]]
+patch = "wall_right"
+type = "diffuse_wall"
+temperature = 409.72499999999997
+
+[[boundary]]
+patch = "sym_y"
+type = "symmetry"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+tolerance = 1.0e-9
+
+[kinetic]
+sweep_blocks = 1
+max_iterations = 200000

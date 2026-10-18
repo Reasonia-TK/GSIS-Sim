@@ -1,0 +1,63 @@
+# フェーズ 5b-1: 新しい既定値(CIS の設定)で δ_rp = 100 の結果が変わらないことの確認用。
+# cases/tube_vacuum/phase5/tube_delta100_p5.toml から、フェーズ 5b で既定値になった [kinetic] の項目(sweep_order・inner_sweeps・
+# inner_wall_update・block_passes・equilibrium・gsis_negative_check)を除いたもの。ほかはフェーズ 5a の最終の設定のまま。
+# 実行: gsis-solver run <この TOML> --init-from runs/phase5/init/d100.csv
+
+[case]
+name = "verify_d100"
+mesh = "../mesh/tube_hex.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(管半径)
+T0 = 273.15                         # K
+delta_rp = 100
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+# 流入の速度の接線成分を 0 にする(静止した槽からの流入。論文の式 (65) は内側の値を外挿するが、δ = 100 で入口を通る
+# 旋回・循環のモードが 1 反復 1.65 倍で育った。docs/phase5_report.md)
+tangential_velocity = "zero"
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5
+max_iterations = 200
+filter_length = 1.0
+
+[kinetic]
+sweep_blocks = 64
+positivity_limiter = false
+limiter_k = 3.0
+
+[macro]
+advection = "upwind2"
+boundary_reconstruction = "cell"
+hot_interpolation = "face"
+gsis_freeze_kn = 1.0
+gsis_cfl_start = 0.0
+init_iterations = 50
+init_advection = "upwind1"

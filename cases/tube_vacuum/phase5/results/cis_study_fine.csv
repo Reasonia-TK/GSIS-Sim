@@ -1,0 +1,3 @@
+tag,delta,variant,sets,iterations,converged,it_1e-4,it_1e-5,it_1e-6,time_per_iteration_s,wall_time_s,Mdot_inlet,Mdot_outlet
+d1_oct,1,oct,sweep_order=octant,594,True,269,594,,0.6185,368.3,0.19566,0.20322
+d1_oct_in2w,1,oct_in2w,sweep_order=octant inner_sweeps=2 inner_wall_update=true,358,True,196,358,,1.2177,437.2,0.19741,0.20143

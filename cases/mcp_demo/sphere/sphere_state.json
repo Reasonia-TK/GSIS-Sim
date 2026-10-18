@@ -1,0 +1,165 @@
+{
+ "format": "gsis-mcp-model",
+ "version": 1,
+ "name": "sphere",
+ "unit": "m",
+ "saved": "2026-10-17T15:17:35+00:00",
+ "generator": "gsis_tools.mcp",
+ "gmsh": "4.15.2",
+ "history": [
+  {
+   "tool": "add_sphere",
+   "args": {
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "radius": 5.0,
+    "name": "far"
+   },
+   "group": 19
+  },
+  {
+   "tool": "add_sphere",
+   "args": {
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "radius": 0.5,
+    "name": "body"
+   },
+   "group": 20
+  },
+  {
+   "tool": "boolean",
+   "args": {
+    "op": "cut",
+    "objects": [
+     "far"
+    ],
+    "tools": [
+     "body"
+    ],
+    "keep_objects": false,
+    "keep_tools": false,
+    "name": "domain"
+   },
+   "group": 21
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "far_field",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": "sphere",
+     "on_plane": null,
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": 5.0,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": "patch",
+    "mode": "set",
+    "steal": false
+   },
+   "group": 22
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "sphere",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": "sphere",
+     "on_plane": null,
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": 0.5,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": "wall",
+    "mode": "set",
+    "steal": false
+   },
+   "group": 23
+  },
+  {
+   "tool": "mesh_settings",
+   "args": {
+    "size_max": 0.5,
+    "size_min": null,
+    "curvature_points": 0,
+    "algorithm_3d": null,
+    "algorithm_2d": null,
+    "optimize": null,
+    "extend_from_boundary": null,
+    "threads": null,
+    "reset": false
+   },
+   "group": 24
+  },
+  {
+   "tool": "mesh_refine",
+   "args": {
+    "name": "near_body",
+    "target": "faces",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": null,
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": "sphere",
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "size": 0.04,
+    "size_far": 0.5,
+    "dist_min": 0.0,
+    "dist_max": 4.0,
+    "box": null,
+    "center": null,
+    "radius": null,
+    "base": null,
+    "axis": null,
+    "thickness": 0.0,
+    "sampling": null,
+    "remove": false
+   },
+   "group": 25
+  }
+ ]
+}

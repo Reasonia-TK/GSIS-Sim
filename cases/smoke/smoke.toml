@@ -1,0 +1,44 @@
+# スモーク用の小さなケース(箱のメッシュ。気体・条件・速度格子は管の δ_rp = 10 と同じ)。
+# メッシュ box.pmesh は gsis-write-box-mesh で作る(docs/build.md を参照):
+#   gsis-write-box-mesh cases/smoke/box.pmesh --n 8 4 4 --lo 0 -1e-3 -1e-3 --hi 4e-3 1e-3 1e-3 --distort 0.15 --tube
+# パッチ: x− が inlet、x+ が outlet、それ以外が wall。
+
+[case]
+name = "smoke_box"
+mesh = "box.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m
+T0 = 273.15                         # K
+delta_rp = 10.0
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5

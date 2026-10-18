@@ -1,0 +1,5 @@
+delta_rp,ref_method,M_ref,gsis_pbc_M,gsis_pbc_error_pct,gsis_pbc_iter,gsis_pbc_time_h,cis_M,cis_error_pct,cis_iter,cis_time_h,speedup,ref_dsmc_cells_million,ref_dsmc_time_h
+1,DSMC,0.197,0.198,0.51,17,0.20,0.198,0.51,189,0.43,2.2,0.225,0.55
+10,DSMC,0.330,0.326,1.21,9,0.11,0.348,5.45,484,1.05,9.5,0.899,2.19
+100,DSMC,0.898,0.885,1.45,7,0.09,0.597,33.52,2796,6.20,68.9,4.2,10.2
+1000,NSF-FLUENT,1.267,1.275,0.63,6,0.08,0.729,42.46,7847,16.03,200.4,,

@@ -1,0 +1,55 @@
+# 平行平板間の熱伝導(Kn = 0.01、線形の範囲)を PBC マクロソルバーの単独モード(NSF のみ)で解く検証ケース。
+#   gsis-solver pbc-run cases/verification/macro/slab_heat_kn0.01_nsf.toml --tolerance 1e-10
+#
+# 単独モードの壁(流出側は再構成した状態の Maxwell 分布、流入側は壁の Maxwell 分布)は、線形の範囲で
+# 温度跳躍 T_b − T_w = 3.75 λ dT/dn(λ = Kn L)を与える。解析解(無次元、基準は p_ref・T0・L):
+#   q = (15/4) μ (T_R − T_L) / (1 + 7.5 Kn)、μ = Kn / sqrt(π/2)
+#     = 3.75 × 0.0079788 × 0.02 / 1.075 = 5.567e-4(× p_ref sqrt(R T0))
+# 要約 JSON の wall_left の flux_nondim[4](外向きのエネルギー流束、面積 1e-4 を掛けた値)は 5.567e-8 に近くなる
+# (nx = 100 で相対差 0.3% 以内。tests/macro/test_macro_solver.cpp の平板の試験と同じ)。
+
+[case]
+name = "slab_heat_kn0.01_nsf"
+mesh = "../../slab/mesh/slab_nx100.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(板間隔)
+T0 = 273.15                         # K
+Kn = 0.01
+
+[[boundary]]
+patch = "wall_left"
+type = "diffuse_wall"
+temperature = 270.4185              # 0.99 T0
+
+[[boundary]]
+patch = "wall_right"
+type = "diffuse_wall"
+temperature = 275.8815              # 1.01 T0
+
+[[boundary]]
+patch = "sym_y"
+type = "symmetry"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+cfl_pbc = 500.0
+
+[macro]
+standalone_boundary_reconstruction = "limited"   # 壁で線形に外挿する(解析解の跳躍の定義に合わせる)
+linear_rtol = 1.0e-8
+pbc_tolerance = 1.0e-10

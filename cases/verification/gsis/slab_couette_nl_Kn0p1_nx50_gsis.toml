@@ -1,0 +1,59 @@
+# 平板のクエット流(couette_nl、Kn = 0.1、50 セル、sym_y は並進周期、sym_z は対称面)を GSIS で解く。
+# cases/verification/gsis/make_cases.py で生成。参照解: verification/ref1d(results/summary_vmid30.csv)。
+# 実行: gsis-solver run <この TOML> --cells-csv
+
+[case]
+name = "slab_couette_nl_Kn0p1_nx50_gsis"
+mesh = "../kinetic/mesh/slab_nx50.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27
+mu_ref = 1.916e-5
+T_ref = 273.15
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3
+T0 = 273.15
+Kn = 0.1
+
+[[boundary]]
+patch = "wall_left"
+type = "diffuse_wall"
+temperature = 273.15
+velocity = [0.0, -753.0631925375766, 0.0]
+
+[[boundary]]
+patch = "wall_right"
+type = "diffuse_wall"
+temperature = 273.15
+velocity = [0.0, 753.0631925375766, 0.0]
+
+[[boundary]]
+patch = "sym_y"
+type = "periodic_slab"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+filter_length = 1.0
+tolerance = 1.0e-6
+max_iterations = 5000
+
+[kinetic]
+sweep_blocks = 1
+convergence_u_floor = 0.1
+
+[macro]
+# 局所 Kn > 1 のセルは PBC の段で動かさない(管と同じ。NSF の合成方程式の段が不安定になる)
+gsis_freeze_kn = 1.0

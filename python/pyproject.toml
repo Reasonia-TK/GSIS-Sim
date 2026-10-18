@@ -1,0 +1,46 @@
+[project]
+name = "gsis-tools"
+version = "0.1.0"
+description = "GSIS-PBC の前処理・後処理・検証ツール"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "gmsh>=4.15.2",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+gsis-tools = "gsis_tools:main"
+gsis-gui = "gsis_tools.gui:main"
+gsis-mcp = "gsis_tools.mcp:main"
+
+[project.optional-dependencies]
+gui = [
+    "pyside6-essentials>=6.12.0",
+    "pyvista>=0.49.1",
+    "pyvistaqt>=0.13.1",
+    "tomlkit>=0.15.1",
+]
+mcp = [
+    "mcp>=2.3.0,<3",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "vtk>=9.7.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: 時間のかかる試験(-m 'not slow' で除外できる)"]
+filterwarnings = [
+    # matplotlib の Qt 部分が Qt 6 で非推奨の属性を参照する(GUI の試験で出る。matplotlib 側の問題)
+    "ignore:Enum value .*AA_UseHighDpiPixmaps.*:DeprecationWarning",
+]

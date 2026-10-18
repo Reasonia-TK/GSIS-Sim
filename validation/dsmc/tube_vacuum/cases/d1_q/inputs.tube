@@ -1,0 +1,65 @@
+# 管→真空ケース(arXiv:2610.07658 §4.1)  case = d1_q
+# δ=1 の本計算(1/4 領域、Δx = R/8)
+# δ_rp = 1, Kn(入口, 論文の定義) = 0.8862, p_in = 20.4053 Pa, T0 = 273.15 K, R = 0.001 m
+# λ_in(VHS) = 0.7862 R, Δx = 0.125 R, Δt = 0.05 R/sqrt(2RT0)
+# make_inputs.py が生成。手で編集せず make_inputs.py の CASES を変更して再生成する
+
+# ---- 計算領域(管軸 = x 軸。入口端面 x=-8R、出口端面 x=14R)
+geometry.prob_lo = -0.008 0 0
+geometry.prob_hi = 0.014 0.008278875 0.008278875
+amr.n_cell = 176 66 66
+amr.max_grid_size = 128
+
+# ---- ガス: He, VHS。d_ref は論文の μ0 = 1.916e-5 Pa s (273.15 K), ω = 0.66 に合わせた値
+gas.species = He
+species.He.mass = 6.65e-27
+species.He.d_ref = 2.300243791e-10
+species.He.T_ref = 273.15
+species.He.omega = 0.66
+dsmc.collision_model = VHS
+# 初期状態: 全域を入口の槽状態(静止)にする
+gas.n = 5.410749602e+21
+gas.T = 273.15
+gas.velocity = 0 0 0
+
+# ---- DSMC
+dsmc.ppc = 16
+dsmc.dt = 4.694870153e-08
+dsmc.max_step = 8000
+dsmc.subcell = none
+dsmc.seed = 20261016
+
+# ---- 境界: 入口端面 = 槽状態からの流入(到達した粒子は吸収)、出口端面 = 真空
+bc.xlo.type = inflow
+bc.xlo.n = 5.410749602e+21
+bc.xlo.T = 273.15
+bc.xlo.velocity = 0 0 0
+bc.xhi.type = outflow
+# 1/4 領域: y=0 と z=0 を対称面にする(管軸は両面の交線)
+bc.ylo.type = symmetry
+bc.zlo.type = symmetry
+# y, z の上端は槽の外側(固体中)で、粒子は届かない
+bc.yhi.type = specular
+bc.zhi.type = specular
+
+# ---- 形状: 流体領域を囲む閉じた STL(内部が流体)。壁は完全拡散 (T0)
+surfaces.n = 1
+surfaces.volume_samples = 16
+surfaces.max_bounces = 128
+surface0.kind = stl
+surface0.file = tube_vacuum_n128.stl
+surface0.scale = 0.001
+surface0.fluid_inside = 1
+surface0.type = diffuse
+surface0.T = 273.15
+
+# ---- 出力: ブロック平均(plot_int ステップごとに出力し、累積をリセット)
+output.plot_int = 400
+output.plot_prefix = plt
+output.write_particles = 0
+output.sample_start = 1
+output.sample_reset = 1
+output.profile_axis = 0
+output.diag_int = 200
+output.chk_int = 8000
+output.chk_prefix = chk

@@ -1,0 +1,40 @@
+{
+  "name": "q_r250",
+  "pmesh": "cases/tube_vacuum/phase5c/mesh/q_r250.pmesh",
+  "quarter": true,
+  "symmetry_factor": 4,
+  "equal_area": false,
+  "options": {
+    "n_theta": 40,
+    "square": 0.4,
+    "ds_wall": 0.017822889971370548,
+    "ds_mouth": 0.017822889971370548,
+    "h_tube": 0.14852408309475457,
+    "h_max": 0.2,
+    "growth": 1.2,
+    "h_core": null
+  },
+  "n_cells": 355760,
+  "n_cells_full_equivalent": 1423040,
+  "section_cells_full": {
+    "up": 13120,
+    "tube": 6080,
+    "down": 9920
+  },
+  "layers": {
+    "up": 49,
+    "tube": 81,
+    "down": 29
+  },
+  "n_ring": 28,
+  "volume_R3": 460.1250406962841,
+  "patch_area_R2": {
+    "inlet": 50.25256417160783,
+    "outlet": 12.563141042901956,
+    "wall": 202.60789830067077,
+    "sym_y": 90.0,
+    "sym_z": 90.0
+  },
+  "check_errors": [],
+  "time_s": 5.08059939998202
+}

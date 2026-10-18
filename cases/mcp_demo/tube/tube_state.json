@@ -1,0 +1,277 @@
+{
+ "format": "gsis-mcp-model",
+ "version": 1,
+ "name": "tube",
+ "unit": "mm",
+ "saved": "2026-10-17T15:16:33+00:00",
+ "generator": "gsis_tools.mcp",
+ "gmsh": "4.15.2",
+ "history": [
+  {
+   "tool": "add_cylinder",
+   "args": {
+    "base": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     8.0,
+     0.0,
+     0.0
+    ],
+    "radius": 8.0,
+    "angle_deg": 360.0,
+    "name": "upstream"
+   },
+   "group": 1
+  },
+  {
+   "tool": "add_cylinder",
+   "args": {
+    "base": [
+     8.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     10.0,
+     0.0,
+     0.0
+    ],
+    "radius": 1.0,
+    "angle_deg": 360.0,
+    "name": "pipe"
+   },
+   "group": 1
+  },
+  {
+   "tool": "add_cylinder",
+   "args": {
+    "base": [
+     18.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     4.0,
+     0.0,
+     0.0
+    ],
+    "radius": 4.0,
+    "angle_deg": 360.0,
+    "name": "downstream"
+   },
+   "group": 1
+  },
+  {
+   "tool": "boolean",
+   "args": {
+    "op": "fuse",
+    "objects": [
+     "upstream"
+    ],
+    "tools": [
+     "pipe",
+     "downstream"
+    ],
+    "keep_objects": false,
+    "keep_tools": false,
+    "name": "tube"
+   },
+   "group": 1
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "inlet",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": {
+      "point": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "normal": [
+       1.0,
+       0.0,
+       0.0
+      ]
+     },
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 2
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "outlet",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": {
+      "point": [
+       22.0,
+       0.0,
+       0.0
+      ],
+      "normal": [
+       1.0,
+       0.0,
+       0.0
+      ]
+     },
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 3
+  },
+  {
+   "tool": "assign_patch",
+   "args": {
+    "name": "wall",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": null,
+     "on_plane": null,
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": null,
+     "axis": null,
+     "patch": null,
+     "unassigned": true,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "kind": null,
+    "mode": "set",
+    "steal": false
+   },
+   "group": 4
+  },
+  {
+   "tool": "mesh_settings",
+   "args": {
+    "size_max": 0.6,
+    "size_min": null,
+    "curvature_points": 0,
+    "algorithm_3d": null,
+    "algorithm_2d": null,
+    "optimize": null,
+    "extend_from_boundary": null,
+    "threads": null,
+    "reset": false
+   },
+   "group": 5
+  },
+  {
+   "tool": "mesh_refine",
+   "args": {
+    "name": "pipe",
+    "target": "cylinder",
+    "select": null,
+    "size": 0.12,
+    "size_far": null,
+    "dist_min": 0.0,
+    "dist_max": null,
+    "box": null,
+    "center": null,
+    "radius": 1.4,
+    "base": [
+     7.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     12.0,
+     0.0,
+     0.0
+    ],
+    "thickness": 0.0,
+    "sampling": null,
+    "remove": false
+   },
+   "group": 6
+  },
+  {
+   "tool": "mesh_refine",
+   "args": {
+    "name": "mouths",
+    "target": "faces",
+    "select": {
+     "faces": null,
+     "volumes": null,
+     "type": "cylinder",
+     "on_plane": null,
+     "normal": null,
+     "in_box": null,
+     "contains_point": null,
+     "radius": 1.0,
+     "axis": null,
+     "patch": null,
+     "unassigned": null,
+     "color": null,
+     "area_min": null,
+     "area_max": null,
+     "tol": null,
+     "angle_tol_deg": null,
+     "include_internal": null
+    },
+    "size": 0.12,
+    "size_far": 0.6,
+    "dist_min": 0.3,
+    "dist_max": 5.0,
+    "box": null,
+    "center": null,
+    "radius": null,
+    "base": null,
+    "axis": null,
+    "thickness": 0.0,
+    "sampling": null,
+    "remove": false
+   },
+   "group": 7
+  }
+ ]
+}

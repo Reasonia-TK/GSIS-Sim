@@ -1,0 +1,25 @@
+// CMake が src/core/build_info.cpp.in から生成するファイル。直接編集しない。
+#include "core/build_info.hpp"
+
+#ifndef GSIS_BUILD_TYPE
+#define GSIS_BUILD_TYPE "unknown"
+#endif
+
+namespace gsis {
+
+std::string_view version_string() { return "@PROJECT_VERSION@"; }
+
+bool built_with_cuda() { return @GSIS_CUDA_ENABLED_INT@ != 0; }
+
+std::string build_description() {
+  std::string s = "gsis-solver @PROJECT_VERSION@ (@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@, ";
+  s += GSIS_BUILD_TYPE;
+  if (built_with_cuda()) {
+    s += ", CUDA @CMAKE_CUDA_COMPILER_VERSION@, arch @GSIS_CUDA_ARCH_STRING@)";
+  } else {
+    s += ", CUDA なし)";
+  }
+  return s;
+}
+
+}  // namespace gsis

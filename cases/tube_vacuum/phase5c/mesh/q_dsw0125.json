@@ -1,0 +1,40 @@
+{
+  "name": "q_dsw0125",
+  "pmesh": "cases/tube_vacuum/phase5c/mesh/q_dsw0125.pmesh",
+  "quarter": true,
+  "symmetry_factor": 4,
+  "equal_area": false,
+  "options": {
+    "n_theta": 16,
+    "square": 0.4,
+    "ds_wall": 0.005569653116053296,
+    "ds_mouth": 0.04455722492842637,
+    "h_tube": 0.37131020773688644,
+    "h_max": 0.5,
+    "growth": 1.2,
+    "h_core": null
+  },
+  "n_cells": 49776,
+  "n_cells_full_equivalent": 199104,
+  "section_cells_full": {
+    "up": 3584,
+    "tube": 1472,
+    "down": 3072
+  },
+  "layers": {
+    "up": 25,
+    "tube": 41,
+    "down": 16
+  },
+  "n_ring": 19,
+  "volume_R3": 459.50435386498015,
+  "patch_area_R2": {
+    "inlet": 50.184775848735036,
+    "outlet": 12.546193962183759,
+    "wall": 202.47759762860971,
+    "sym_y": 90.0,
+    "sym_z": 90.0
+  },
+  "check_errors": [],
+  "time_s": 3.214911699993536
+}

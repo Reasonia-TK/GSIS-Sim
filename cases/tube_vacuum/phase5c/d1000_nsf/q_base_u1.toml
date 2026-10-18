@@ -1,0 +1,51 @@
+# フェーズ 5c: 管 δ_rp = 1000 の NSF のみの PBC 単独(pbc-run)のメッシュ依存性(d1000_mesh_study.py で生成)。
+# メッシュ: cases/tube_vacuum/phase5b_d10/mesh/q_base.pmesh(1/4 領域、対称面 sym_y・sym_z)
+[case]
+name = "q_base_u1"
+mesh = "../../phase5b_d10/mesh/q_base.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27
+mu_ref = 1.916e-5
+T_ref = 273.15
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3
+T0 = 273.15
+delta_rp = 1000
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+tangential_velocity = "zero"
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[[boundary]]
+patch = "sym_y"
+type = "symmetry"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+cfl_pbc = 500.0
+
+[macro]
+advection = "upwind1"
+boundary_reconstruction = "cell"

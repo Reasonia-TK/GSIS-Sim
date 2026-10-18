@@ -1,0 +1,40 @@
+{
+  "name": "q_nth32",
+  "pmesh": "cases/tube_vacuum/phase5b_d10/mesh/q_nth32.pmesh",
+  "quarter": true,
+  "symmetry_factor": 4,
+  "equal_area": false,
+  "options": {
+    "n_theta": 32,
+    "square": 0.4,
+    "ds_wall": 0.04455722492842637,
+    "ds_mouth": 0.04455722492842637,
+    "h_tube": 0.37131020773688644,
+    "h_max": 0.5,
+    "growth": 1.2,
+    "h_core": null
+  },
+  "n_cells": 83296,
+  "n_cells_full_equivalent": 333184,
+  "section_cells_full": {
+    "up": 5760,
+    "tube": 2816,
+    "down": 4608
+  },
+  "layers": {
+    "up": 25,
+    "tube": 41,
+    "down": 16
+  },
+  "n_ring": 14,
+  "volume_R3": 460.0585144938712,
+  "patch_area_R2": {
+    "inlet": 50.24529851127605,
+    "outlet": 12.561324627819012,
+    "wall": 202.59393385259247,
+    "sym_y": 90.0,
+    "sym_z": 90.0
+  },
+  "check_errors": [],
+  "time_s": 1.3009799999999814
+}

@@ -1,0 +1,740 @@
+{
+ "server": {
+  "name": "gsis-gmsh",
+  "version": "0.1.0",
+  "protocol": "2025-11-25",
+  "tools": 31,
+  "tools_list_bytes": 30174
+ },
+ "tube": {
+  "exact_volume_mm3": 1840.9732950036187,
+  "measure": {
+   "unit": "mm",
+   "volumes": [
+    {
+     "tag": 1,
+     "names": [
+      "tube"
+     ],
+     "volume": 1840.973295,
+     "area": 1061.858317,
+     "center": [
+      5.901024,
+      2.327049e-16,
+      6.947287e-16
+     ],
+     "bbox": [
+      -1e-07,
+      -8.0,
+      -8.0,
+      22.0,
+      8.0,
+      8.0
+     ],
+     "faces": 7,
+     "shells": 1
+    }
+   ],
+   "total_volume": 1840.973295,
+   "bbox": [
+    -1e-07,
+    -8.0,
+    -8.0,
+    22.0,
+    8.0,
+    8.0
+   ],
+   "expected_volume": 1840.973295,
+   "rel_error": 1.24e-16
+  },
+  "patches": {
+   "unit": "mm",
+   "patches": [
+    {
+     "name": "inlet",
+     "kind": "inlet",
+     "faces": [
+      3
+     ],
+     "area": 201.0619298
+    },
+    {
+     "name": "outlet",
+     "kind": "outlet",
+     "faces": [
+      7
+     ],
+     "area": 50.26548246
+    },
+    {
+     "name": "wall",
+     "kind": "wall",
+     "faces": [
+      1,
+      2,
+      4,
+      5,
+      6
+     ],
+     "area": 810.5309046
+    }
+   ],
+   "unassigned_count": 0,
+   "complete": true
+  },
+  "mesh": {
+   "dim": 3,
+   "nodes": 36824,
+   "tetrahedra": 185656,
+   "mesh_volume": 1839.436205,
+   "volume_rel_diff": -0.000835,
+   "quality_minSICN": {
+    "min": 0.455,
+    "p01": 0.676,
+    "below_0.1": 0
+   },
+   "cell_size_hV": {
+    "min": 0.04568,
+    "mean": 0.1525,
+    "max": 0.515
+   },
+   "boundary_triangles": {
+    "inlet": 1342,
+    "outlet": 436,
+    "wall": 20148
+   },
+   "time_s": 10.6,
+   "estimate": 193965,
+   "settings": {
+    "size_max": 0.6,
+    "size_min": 0.0,
+    "fields": 2
+   },
+   "unit": "mm"
+  },
+  "quality": {
+   "unit": "mm",
+   "cells": 185656,
+   "faces": 382275,
+   "points": 36824,
+   "cell_types": {
+    "tetrahedron": 185656
+   },
+   "volume": 1839.436205,
+   "geometry_volume": 1840.973295,
+   "volume_rel_diff": -0.000835,
+   "patches": {
+    "inlet": {
+     "kind": "inlet",
+     "faces": 1342,
+     "area": 200.87449
+    },
+    "outlet": {
+     "kind": "outlet",
+     "faces": 436,
+     "area": 50.078201
+    },
+    "wall": {
+     "kind": "wall",
+     "faces": 20148,
+     "area": 810.13589
+    }
+   },
+   "cell_size_hV": {
+    "min": 0.04568,
+    "mean": 0.1525,
+    "p50": 0.08482,
+    "max": 0.515
+   },
+   "max_edge": 1.344,
+   "non_orthogonality_deg": {
+    "mean": 13.45,
+    "p99": 31.62,
+    "max": 49.72
+   },
+   "skewness_max": 0.8325,
+   "volume_ratio_max": 3.393,
+   "check": "OK"
+  },
+  "pmesh": {
+   "path": "tube/tube.pmesh",
+   "written": [
+    "tube/tube.pmesh",
+    "tube/tube_quality.md"
+   ],
+   "length_unit": "m",
+   "scale_to_m": 0.001,
+   "cells": 185656,
+   "faces": 382275,
+   "points": 36824,
+   "volume_m3": 1.839436205e-06,
+   "patches": [
+    {
+     "name": "inlet",
+     "kind": "inlet",
+     "faces": 1342,
+     "area_m2": 0.00020087449
+    },
+    {
+     "name": "outlet",
+     "kind": "outlet",
+     "faces": 436,
+     "area_m2": 5.0078201e-05
+    },
+    {
+     "name": "wall",
+     "kind": "wall",
+     "faces": 20148,
+     "area_m2": 0.00081013589
+    }
+   ],
+   "check": "OK",
+   "warnings": []
+  },
+  "exact_areas_m2": {
+   "inlet": 0.00020106192982974675,
+   "outlet": 5.0265482457436686e-05
+  },
+  "calls": 20,
+  "seconds": 18.7,
+  "mesh_info": {
+   "returncode": 0,
+   "ok": true,
+   "cells": 185656,
+   "seconds": 0.85,
+   "stdout_tail": [
+    "points=36824 faces=382275 internal_faces=360349 boundary_faces=21926 cells=185656",
+    "  patch 'inlet' kind=inlet start=360349 count=1342",
+    "  patch 'outlet' kind=outlet start=361691 count=436",
+    "  patch 'wall' kind=wall start=362127 count=20148",
+    "要素の内訳: tetrahedron 185656",
+    "セル寸法 h_V = V^(1/3) [m]: 最小 4.568e-05、平均 0.0001525、最大 0.000515(最大辺 0.001344)",
+    "非直交角 [deg]: 平均 13.45、99% 31.62、最大 49.72",
+    "歪み: 最大 0.833、体積比: 最大 3.393"
+   ]
+  }
+ },
+ "dgl": {
+  "profile_area_mm2": 20293.5,
+  "profile_centroid_r_mm": 49.90614794556549,
+  "pappus_volume_mm3": 6363424.180602197,
+  "profile": {
+   "name": "meridian",
+   "surface": 1,
+   "area": 20293.5,
+   "centroid": [
+    49.90615,
+    0.0,
+    110.11
+   ],
+   "centroid_uv": [
+    49.90615,
+    110.11
+   ],
+   "normal": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "pappus_volume_v_axis": 6363424.181,
+   "note": "pappus_volume_v_axis は、この断面を v 軸(u = 0 の直線)まわりに 360° 回したときの体積"
+  },
+  "revolve": {
+   "name": "dgl",
+   "volumes": [
+    1
+   ],
+   "volume": 6363424.181,
+   "faces": 14,
+   "model_volumes": 1,
+   "pappus_volume": 6363424.181,
+   "rel_error": 6.25e-11,
+   "removed_profile_surfaces": [
+    1
+   ]
+  },
+  "measure": {
+   "unit": "mm",
+   "volumes": [
+    {
+     "tag": 1,
+     "names": [
+      "dgl"
+     ],
+     "volume": 6363424.181,
+     "area": 332573.784,
+     "center": [
+      -6.037167e-16,
+      1.544426e-16,
+      110.0526
+     ],
+     "bbox": [
+      -100.0,
+      -100.0,
+      -1e-07,
+      100.0,
+      100.0,
+      220.0
+     ],
+     "faces": 14,
+     "shells": 2
+    }
+   ],
+   "total_volume": 6363424.181,
+   "bbox": [
+    -100.0,
+    -100.0,
+    -1e-07,
+    100.0,
+    100.0,
+    220.0
+   ],
+   "expected_volume": 6363424.181,
+   "rel_error": 0.0
+  },
+  "check": {
+   "ok": true,
+   "volumes": 1,
+   "faces": 14,
+   "issues": [],
+   "shells": {
+    "1": 2
+   },
+   "surface_mesh_test": {
+    "ok": true,
+    "triangles": 19610
+   }
+  },
+  "step_import": {
+   "import": {
+    "name": "dgl",
+    "source": "dgl/dgl.step",
+    "stored_as": ".gsis_mcp/imports/0f9cd20cae9a7668.step",
+    "healed": false,
+    "unit": "mm",
+    "volumes": [
+     1
+    ],
+    "volume": 6363424.181,
+    "faces": 14
+   },
+   "measure": {
+    "unit": "mm",
+    "volumes": [
+     {
+      "tag": 1,
+      "names": [
+       "dgl"
+      ],
+      "volume": 6363424.181,
+      "area": 332573.784,
+      "center": [
+       -1.572371e-12,
+       -3.226899e-16,
+       110.0526
+      ],
+      "bbox": [
+       -100.0,
+       -100.0,
+       -1e-07,
+       100.0,
+       100.0,
+       220.0
+      ],
+      "faces": 14,
+      "shells": 2
+     }
+    ],
+    "total_volume": 6363424.181,
+    "bbox": [
+     -100.0,
+     -100.0,
+     -1e-07,
+     100.0,
+     100.0,
+     220.0
+    ],
+    "expected_volume": 6363424.181,
+    "rel_error": -1.73e-14
+   }
+  },
+  "patches": {
+   "unit": "mm",
+   "patches": [
+    {
+     "name": "inlet",
+     "kind": "inlet",
+     "faces": [
+      7
+     ],
+     "area": 1884.955592
+    },
+    {
+     "name": "outlet_top",
+     "kind": "outlet",
+     "faces": [
+      12
+     ],
+     "area": 31415.92654
+    },
+    {
+     "name": "outlet_bottom",
+     "kind": "outlet",
+     "faces": [
+      2
+     ],
+     "area": 31415.92654
+    },
+    {
+     "name": "wall",
+     "kind": "wall",
+     "faces": [
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      11,
+      13,
+      14,
+      15
+     ],
+     "area": 267856.9753
+    }
+   ],
+   "unassigned_count": 0,
+   "complete": true
+  },
+  "mesh": {
+   "dim": 3,
+   "nodes": 116644,
+   "tetrahedra": 521782,
+   "mesh_volume": 6360610.894,
+   "volume_rel_diff": -0.000442,
+   "quality_minSICN": {
+    "min": 0.348,
+    "p01": 0.644,
+    "below_0.1": 0
+   },
+   "cell_size_hV": {
+    "min": 0.3867,
+    "mean": 1.732,
+    "max": 5.116
+   },
+   "boundary_triangles": {
+    "inlet": 1578,
+    "outlet_top": 2077,
+    "outlet_bottom": 2081,
+    "wall": 109634
+   },
+   "time_s": 34.8,
+   "estimate": 308744,
+   "settings": {
+    "size_max": 6.0,
+    "size_min": 0.5,
+    "fields": 3
+   },
+   "unit": "mm"
+  },
+  "quality": {
+   "unit": "mm",
+   "cells": 521782,
+   "faces": 1101249,
+   "points": 116644,
+   "cell_types": {
+    "tetrahedron": 521782
+   },
+   "volume": 6360610.894,
+   "geometry_volume": 6363424.181,
+   "volume_rel_diff": -0.000442,
+   "patches": {
+    "inlet": {
+     "kind": "inlet",
+     "faces": 1578,
+     "area": 1884.9398
+    },
+    "outlet_top": {
+     "kind": "outlet",
+     "faces": 2077,
+     "area": 31397.181
+    },
+    "outlet_bottom": {
+     "kind": "outlet",
+     "faces": 2081,
+     "area": 31397.181
+    },
+    "wall": {
+     "kind": "wall",
+     "faces": 109634,
+     "area": 267801.56
+    }
+   },
+   "cell_size_hV": {
+    "min": 0.3867,
+    "mean": 1.732,
+    "p50": 1.243,
+    "max": 5.116
+   },
+   "max_edge": 12.83,
+   "non_orthogonality_deg": {
+    "mean": 14.57,
+    "p99": 33.21,
+    "max": 59.5
+   },
+   "skewness_max": 0.8226,
+   "volume_ratio_max": 4.095,
+   "check": "OK"
+  },
+  "pmesh": {
+   "path": "dgl/dgl.pmesh",
+   "written": [
+    "dgl/dgl.pmesh",
+    "dgl/dgl_quality.md"
+   ],
+   "length_unit": "m",
+   "scale_to_m": 0.001,
+   "cells": 521782,
+   "faces": 1101249,
+   "points": 116644,
+   "volume_m3": 0.006360610894,
+   "patches": [
+    {
+     "name": "inlet",
+     "kind": "inlet",
+     "faces": 1578,
+     "area_m2": 0.0018849398
+    },
+    {
+     "name": "outlet_top",
+     "kind": "outlet",
+     "faces": 2077,
+     "area_m2": 0.031397181
+    },
+    {
+     "name": "outlet_bottom",
+     "kind": "outlet",
+     "faces": 2081,
+     "area_m2": 0.031397181
+    },
+    {
+     "name": "wall",
+     "kind": "wall",
+     "faces": 109634,
+     "area_m2": 0.26780156
+    }
+   ],
+   "check": "OK",
+   "warnings": []
+  },
+  "exact_areas_m2": {
+   "inlet": 0.0018849555921538759,
+   "outlet_top": 0.031415926535897934,
+   "outlet_bottom": 0.031415926535897934
+  },
+  "calls": 29,
+  "seconds": 50.2,
+  "mesh_info": {
+   "returncode": 0,
+   "ok": true,
+   "cells": 521782,
+   "seconds": 2.23,
+   "stdout_tail": [
+    "  patch 'inlet' kind=inlet start=985879 count=1578",
+    "  patch 'outlet_top' kind=outlet start=987457 count=2077",
+    "  patch 'outlet_bottom' kind=outlet start=989534 count=2081",
+    "  patch 'wall' kind=wall start=991615 count=109634",
+    "要素の内訳: tetrahedron 521782",
+    "セル寸法 h_V = V^(1/3) [m]: 最小 0.0003867、平均 0.001732、最大 0.005116(最大辺 0.01283)",
+    "非直交角 [deg]: 平均 14.57、99% 33.21、最大 59.50",
+    "歪み: 最大 0.823、体積比: 最大 4.095"
+   ]
+  }
+ },
+ "sphere": {
+  "exact_volume_m3": 523.0751768227005,
+  "measure": {
+   "unit": "m",
+   "volumes": [
+    {
+     "tag": 1,
+     "names": [
+      "domain"
+     ],
+     "volume": 523.0751768,
+     "area": 317.300858,
+     "center": [
+      8.247414e-17,
+      -6.369043e-17,
+      -8.535569e-17
+     ],
+     "bbox": [
+      -5.0,
+      -5.0,
+      -5.0,
+      5.0,
+      5.0,
+      5.0
+     ],
+     "faces": 2,
+     "shells": 2
+    }
+   ],
+   "total_volume": 523.0751768,
+   "bbox": [
+    -5.0,
+    -5.0,
+    -5.0,
+    5.0,
+    5.0,
+    5.0
+   ],
+   "expected_volume": 523.0751768,
+   "rel_error": 0.0
+  },
+  "patches": {
+   "unit": "m",
+   "patches": [
+    {
+     "name": "far_field",
+     "kind": "patch",
+     "faces": [
+      3
+     ],
+     "area": 314.1592654
+    },
+    {
+     "name": "sphere",
+     "kind": "wall",
+     "faces": [
+      2
+     ],
+     "area": 3.141592654
+    }
+   ],
+   "unassigned_count": 0,
+   "complete": true
+  },
+  "mesh": {
+   "dim": 3,
+   "nodes": 22465,
+   "tetrahedra": 122126,
+   "mesh_volume": 521.2400992,
+   "volume_rel_diff": -0.00351,
+   "quality_minSICN": {
+    "min": 0.449,
+    "p01": 0.69,
+    "below_0.1": 0
+   },
+   "cell_size_hV": {
+    "min": 0.0157,
+    "mean": 0.11,
+    "max": 0.3798
+   },
+   "boundary_triangles": {
+    "far_field": 3176,
+    "sphere": 4566
+   },
+   "time_s": 5.95,
+   "estimate": 99486,
+   "settings": {
+    "size_max": 0.5,
+    "size_min": 0.0,
+    "fields": 1
+   },
+   "unit": "m"
+  },
+  "quality": {
+   "unit": "m",
+   "cells": 122126,
+   "faces": 248123,
+   "points": 22465,
+   "cell_types": {
+    "tetrahedron": 122126
+   },
+   "volume": 521.2400992,
+   "geometry_volume": 523.0751768,
+   "volume_rel_diff": -0.00351,
+   "patches": {
+    "far_field": {
+     "kind": "patch",
+     "faces": 3176,
+     "area": 313.55031
+    },
+    "sphere": {
+     "kind": "wall",
+     "faces": 4566,
+     "area": 3.1373645
+    }
+   },
+   "cell_size_hV": {
+    "min": 0.0157,
+    "mean": 0.11,
+    "p50": 0.07655,
+    "max": 0.3798
+   },
+   "max_edge": 1.048,
+   "non_orthogonality_deg": {
+    "mean": 13.19,
+    "p99": 30.71,
+    "max": 52.42
+   },
+   "skewness_max": 0.6212,
+   "volume_ratio_max": 3.622,
+   "check": "OK"
+  },
+  "pmesh": {
+   "path": "sphere/sphere.pmesh",
+   "written": [
+    "sphere/sphere.pmesh",
+    "sphere/sphere_quality.md"
+   ],
+   "length_unit": "m",
+   "scale_to_m": 1.0,
+   "cells": 122126,
+   "faces": 248123,
+   "points": 22465,
+   "volume_m3": 521.2400992,
+   "patches": [
+    {
+     "name": "far_field",
+     "kind": "patch",
+     "faces": 3176,
+     "area_m2": 313.55031
+    },
+    {
+     "name": "sphere",
+     "kind": "wall",
+     "faces": 4566,
+     "area_m2": 3.1373645
+    }
+   ],
+   "check": "OK",
+   "warnings": []
+  },
+  "exact_areas_m2": {
+   "far_field": 314.1592653589793,
+   "sphere": 3.141592653589793
+  },
+  "calls": 19,
+  "seconds": 11.8,
+  "mesh_info": {
+   "returncode": 0,
+   "ok": true,
+   "cells": 122126,
+   "seconds": 0.6,
+   "stdout_tail": [
+    "  体積の合計: 521.2400991695254",
+    "points=22465 faces=248123 internal_faces=240381 boundary_faces=7742 cells=122126",
+    "  patch 'far_field' kind=patch start=240381 count=3176",
+    "  patch 'sphere' kind=wall start=243557 count=4566",
+    "要素の内訳: tetrahedron 122126",
+    "セル寸法 h_V = V^(1/3) [m]: 最小 0.0157、平均 0.11、最大 0.3798(最大辺 1.048)",
+    "非直交角 [deg]: 平均 13.19、99% 30.71、最大 52.42",
+    "歪み: 最大 0.621、体積比: 最大 3.622"
+   ]
+  }
+ },
+ "generated": "2026-10-18T00:17:39+09:00"
+}

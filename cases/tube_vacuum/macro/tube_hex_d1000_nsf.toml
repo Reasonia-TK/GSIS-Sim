@@ -1,0 +1,52 @@
+# 円管 → 真空(論文 §4.1)の δ_rp = 1000 を、PBC マクロソルバーの単独モード(NSF のみ)で解く。
+#   gsis-solver pbc-run cases/tube_vacuum/macro/tube_hex_d1000_nsf.toml
+# 境界は運動論的なフラックス(Maxwell 分布の半空間フラックス、整合補正 0)なので、
+# 壁ではすべり(すべり係数は Maxwell 型の約 2 倍)が入る(docs/phase3_report.md)。
+
+[case]
+name = "tube_hex_d1000_nsf"
+mesh = "../mesh/tube_hex.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(管半径。メッシュは半径 1e-3 m で作ってある)
+T0 = 273.15                         # K
+delta_rp = 1000.0
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5
+
+[macro]
+advection = "upwind1"
+linear_solver = "gmres"
+preconditioner = "ilu0"
+linear_rtol = 1.0e-3
+linear_max_iterations = 200
+pbc_tolerance = 1.0e-6

@@ -1,0 +1,7 @@
+boundary,boundary_type,direction,mass_flow_kg_s
+I1,pressure_inlet,in,6.338e-4
+I2,pressure_inlet,in,1.237e-3
+O1,vacuum,out,1.143e-4
+O2,vacuum,out,3.945e-4
+O3,vacuum,out,9.522e-4
+O4,vacuum,out,4.097e-4

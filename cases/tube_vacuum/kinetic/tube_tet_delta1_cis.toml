@@ -1,0 +1,46 @@
+# 円管 → 真空(論文 §4.1)の CIS 単独の計算(δ_rp = 1)。メッシュは非構造四面体 tube_tet(133,586 セル、感度の確認用)。
+# 実行: gsis-solver cis-run cases/tube_vacuum/kinetic/tube_tet_delta1_cis.toml
+# 論文の CIS: Table 1(反復数・質量流量)。初期状態は入口の状態(p_in, T0)で静止した一様な平衡分布。
+
+[case]
+name = "tube_tet_delta1_cis"
+mesh = "../mesh/tube_tet.pmesh"
+mode = "cis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(管半径)
+T0 = 273.15                         # K
+delta_rp = 1.0
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+tolerance = 1.0e-5
+
+[kinetic]
+sweep_blocks = 0
+# 既定のリミッタ(relative・K = 3)では、下流槽の真空に近い大きなセルで反復 78 回目に発散した。
+# K = 2・1 なら安定(ただし ε が 7×10⁻⁵・1.2×10⁻⁴ で頭打ち。流量は六面体と一致)。docs/phase2_report.md §3.5
+limiter_k = 2.0

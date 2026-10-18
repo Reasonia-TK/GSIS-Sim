@@ -1,0 +1,75 @@
+# フェーズ 5b-2(δ_rp = 10 の質量流量の感度調査): PBC の移流項を 1 次風上
+# cases/tube_vacuum/phase5b_d10/study.py make で生成。実行は study.py run(固定版 runs/phase5b/bin/gsis-solver-5a.exe)
+# 既定はフェーズ 5a の本番の設定(cases/tube_vacuum/phase5/tube_delta10_p5.toml)。1/4 領域(対称面 sym_y・sym_z、Ṁ は 4 倍して比べる)
+
+[case]
+name = "q_adv1"
+mesh = "../mesh/q_base.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27
+mu_ref = 1.916e-5
+T_ref = 273.15
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3
+T0 = 273.15
+delta_rp = 10
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+tangential_velocity = "zero"
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[[boundary]]
+patch = "sym_y"
+type = "symmetry"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1e-05
+max_iterations = 200
+filter_length = 1.0
+
+[kinetic]
+sweep_blocks = 64
+sweep_order = "octant"
+inner_sweeps = 4
+inner_wall_update = true
+block_passes = 2
+equilibrium = "discrete"
+gsis_negative_check = "blend"
+positivity_limiter = false
+limiter_k = 3.0
+velocity_chunk = 4608
+
+[macro]
+advection = "upwind1"
+boundary_reconstruction = "limited"
+hot_interpolation = "face"
+gsis_freeze_kn = 1.0
+gsis_cfl_start = 0.0
+init_iterations = 50
+init_advection = "upwind1"

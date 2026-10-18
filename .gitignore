@@ -1,0 +1,28 @@
+# ビルドと実行の生成物
+build/
+runs/
+mcp_workspace/
+**/mcp_workspace/
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Claude Code のローカルな状態
+.claude/
+
+# 作り直せる大きなメッシュと可視化(作り直しの手順は README.md)
+cases/**/*.vtu
+cases/**/*.msh
+cases/**/*.pmesh
+!cases/smoke/*.pmesh
+!cases/slab/mesh/*.pmesh
+!cases/verification/**/*.pmesh
+
+# DSMC の計算結果の大きなファイル(解析結果・入力・記録は残す)
+validation/dsmc/runs/**/plt*/
+validation/dsmc/runs/**/chk*/
+validation/dsmc/runs/**/*.stl

@@ -1,0 +1,56 @@
+# 平行平板クエット流(Kn = 0.01、壁速度 ±0.01 sqrt(R T0))を PBC マクロソルバーの単独モード(NSF のみ)で解く検証ケース。
+#   gsis-solver pbc-run cases/verification/macro/slab_couette_kn0.01_nsf.toml --tolerance 1e-10
+#
+# 単独モードの壁は、線形の範囲ですべり u_b − u_w = 2 λ du/dn を与える。解析解(無次元):
+#   τ = μ (2U) / (1 + 4 Kn)、μ = Kn / sqrt(π/2)、U = 0.01
+#     = 0.0079788 × 0.02 / 1.04 = 1.5344e-4(× p_ref)
+# 要約 JSON の wall_left の flux_nondim[2](外向きの y 運動量流束、面積 1e-4 を掛けた値)は 1.534e-8 に近くなる。
+# 壁が動く y 方向の側面は並進周期(鏡映面は u_y = 0 を強制するので使えない)、z の側面は対称面。
+
+[case]
+name = "slab_couette_kn0.01_nsf"
+mesh = "../../slab/mesh/slab_nx100.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(板間隔)
+T0 = 273.15                         # K
+Kn = 0.01
+
+[[boundary]]
+patch = "wall_left"
+type = "diffuse_wall"
+temperature = 273.15
+velocity = [0.0, -7.5307, 0.0]      # −0.01 sqrt(R T0) [m/s](He: sqrt(R T0) = 753.07 m/s)
+
+[[boundary]]
+patch = "wall_right"
+type = "diffuse_wall"
+temperature = 273.15
+velocity = [0.0, 7.5307, 0.0]
+
+[[boundary]]
+patch = "sym_y"
+type = "periodic_slab"
+
+[[boundary]]
+patch = "sym_z"
+type = "symmetry"
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]
+
+[gsis]
+cfl_pbc = 500.0
+
+[macro]
+standalone_boundary_reconstruction = "limited"
+linear_rtol = 1.0e-8
+pbc_tolerance = 1.0e-10

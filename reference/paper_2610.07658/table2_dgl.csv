@@ -1,0 +1,4 @@
+inlet_sccm,ref_method,ref_upper_outlet_sccm,gsis_pbc_upper_outlet_sccm,error_pct,gsis_pbc_iter,gsis_pbc_time_h,gsis_db_iter_min,gsis_db_time_h_min,speedup_vs_gsis_db_approx,dsmc_cells,dsmc_particles_million,dsmc_time_h
+10,DSMC,-18.73,-18.66,0.37,16,0.35,2818,13.23,60,225000,12,4.12
+100,DSMC,57.45,56.73,1.25,20,0.44,2818,13.23,30,225000,18,12.55
+1000,FLUENT,762.70,768.22,0.72,9,0.21,,,,,,

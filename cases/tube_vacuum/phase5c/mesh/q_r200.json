@@ -1,0 +1,40 @@
+{
+  "name": "q_r200",
+  "pmesh": "cases/tube_vacuum/phase5c/mesh/q_r200.pmesh",
+  "quarter": true,
+  "symmetry_factor": 4,
+  "equal_area": false,
+  "options": {
+    "n_theta": 32,
+    "square": 0.4,
+    "ds_wall": 0.022278612464213185,
+    "ds_mouth": 0.022278612464213185,
+    "h_tube": 0.18565510386844322,
+    "h_max": 0.25,
+    "growth": 1.2,
+    "h_core": null
+  },
+  "n_cells": 193184,
+  "n_cells_full_equivalent": 772736,
+  "section_cells_full": {
+    "up": 8576,
+    "tube": 3840,
+    "down": 6400
+  },
+  "layers": {
+    "up": 41,
+    "tube": 68,
+    "down": 25
+  },
+  "n_ring": 22,
+  "volume_R3": 460.0585144938713,
+  "patch_area_R2": {
+    "inlet": 50.245298511276054,
+    "outlet": 12.561324627819014,
+    "wall": 202.59393385259244,
+    "sym_y": 90.0,
+    "sym_z": 90.0
+  },
+  "check_errors": [],
+  "time_s": 2.7732268000254408
+}
