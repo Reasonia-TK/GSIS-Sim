@@ -223,6 +223,8 @@ class PbcSolver {
   const std::vector<double>& last_kinetic_energy_defect() const { return defect_; }
   // 最後の段で使った HoT(単独モードなら 0。出力用)
   HigherOrderTerms last_hot() const;
+  // 最後の状態・セル勾配の NSF 構成則。分布関数を確保せず共通出力を作る。
+  KineticMoments nsf_moments() const;
   // 最後の評価のパッチごとの外向きの質量流量(無次元)
   std::vector<double> patch_mass_flow() const;
   // 最後の評価の内部面の質量流束 F_ρ(内部面の番号順、owner → neighbour の向き、無次元。フェーズ 5c の断面の流量用)。

@@ -1,6 +1,8 @@
 #include "config/case_config.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <format>
 #include <set>
 #include <toml++/toml.hpp>
@@ -19,6 +21,8 @@ std::string_view to_string(SolverMode mode) {
       return "gsis";
     case SolverMode::Cis:
       return "cis";
+    case SolverMode::Nsf:
+      return "nsf";
   }
   return "?";
 }
@@ -312,8 +316,10 @@ void parse_case_section(const toml::node& node, CaseConfig& cfg) {
     cfg.case_info.mode = SolverMode::Gsis;
   } else if (mode == "cis") {
     cfg.case_info.mode = SolverMode::Cis;
+  } else if (mode == "nsf") {
+    cfg.case_info.mode = SolverMode::Nsf;
   } else {
-    GSIS_FAIL(std::format("case.mode は \"gsis\" か \"cis\" です(値: \"{}\")", mode));
+    GSIS_FAIL(std::format("case.mode は \"gsis\"・\"cis\"・\"nsf\" です(値: \"{}\")", mode));
   }
   r.finish();
 }
@@ -421,6 +427,13 @@ void parse_boundary_array(const toml::node& node, CaseConfig& cfg) {
 void parse_velocity_grid_section(const toml::node& node, CaseConfig& cfg) {
   TableReader r(as_table(node, "velocity_grid"), "velocity_grid");
   VelocityGridSection& v = cfg.velocity_grid;
+  v.automatic = r.opt_boolean("auto").value_or(false);
+  if (v.automatic) {
+    GSIS_CHECK(r.find("n") == nullptr && r.find("range") == nullptr,
+               "velocity_grid.auto = true と n・range は併用できません");
+    r.finish();
+    return;
+  }
   v.n = r.get_int3("n");
   const auto range = r.get_range3("range");
   r.finish();
@@ -556,6 +569,28 @@ CaseConfig parse_case_toml(std::string_view text, const std::filesystem::path& s
   for (const SectionDef& d : kSections) {
     GSIS_CHECK(!d.required || seen.contains(d.name),
                std::format("{}: 必須の節 [{}] がありません", source_name, d.name));
+  }
+  if (cfg.velocity_grid.automatic) {
+    auto& v = cfg.velocity_grid;
+    v.T_min = std::numeric_limits<double>::infinity();
+    for (const auto& b : cfg.boundaries) {
+      if (b.temperature) {
+        v.T_min = std::min(v.T_min, *b.temperature);
+        v.T_max = std::max(v.T_max, *b.temperature);
+      }
+      if (b.velocity) v.u_max = std::max(v.u_max, norm(*b.velocity));
+    }
+    if (v.T_max == 0.0) v.T_min = v.T_max = cfg.conditions.T0;
+    const double R = cfg.gas.specific_gas_constant();
+    const double limit = v.u_max + 5.0 * std::sqrt(R * v.T_max);
+    const double n = std::max(2.0, 2.0 * std::ceil(limit / (0.7 * std::sqrt(R * v.T_min))));
+    GSIS_CHECK(std::isfinite(n) && n * n * n <= 100'000'000.0,
+               "自動速度格子の速度点が多すぎます(1 億点以下)");
+    const double limit_nd = limit / std::sqrt(R * cfg.conditions.T0);
+    GSIS_CHECK(std::isfinite(limit_nd), "自動速度格子の範囲が有限ではありません");
+    v.n.fill(static_cast<int>(n));
+    v.lo.fill(-limit_nd);
+    v.hi.fill(limit_nd);
   }
   // 圧力入口の pressure を省略できるのは、p_in が決まる delta_rp を与えたときだけ
   for (const BoundarySpec& b : cfg.boundaries) {

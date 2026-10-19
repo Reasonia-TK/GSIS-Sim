@@ -119,7 +119,7 @@ RunOptions parse_options(std::span<const std::string> args) {
       o.out_dir = value();
     } else if (a == "--mode") {
       o.mode = value();
-      if (o.mode != "gsis" && o.mode != "cis") throw UsageError{"--mode は gsis か cis です"};
+      if (o.mode != "gsis" && o.mode != "cis" && o.mode != "nsf") throw UsageError{"--mode は gsis・cis・nsf です"};
     } else if (a == "--max-iter") {
       o.max_iter = parse_integer(value(), a);
       if (o.max_iter < 1) throw UsageError{"--max-iter は 1 以上です"};
@@ -406,7 +406,6 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
   const double tol = opt.tol > 0.0 ? opt.tol : cfg.gsis.tolerance;
   const long long print_every = opt.print_every >= 0 ? opt.print_every : 1;
   std::filesystem::create_directories(out_dir);
-  clear_stop_request(out_dir);
 
   Timer total_timer;
   const LoadedMesh lm = load_pmesh(cfg.mesh_path());
@@ -555,6 +554,7 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
     const MassBalance mb_half = mass_balance(it.patch_mass_flow_kinetic);
     const bool balance_ok = !cfg.gsis.mass_balance_required || !mb_half.valid ||
                             std::abs(mb_half.imbalance) < cfg.gsis.mass_balance_tolerance;
+    stopped = stop_requested(out_dir);
     if (it.iteration >= min_iter && it.change.epsilon < tol && balance_ok) {
       converged = true;
       break;
@@ -575,11 +575,11 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
   const BoundaryKineticFluxes fluxes = solver.kinetic().boundary_fluxes();
   const HigherOrderTerms hot = solver.macro().last_hot();
   const std::vector<double> residual_cell = solver.kinetic().residual_per_cell();
-  if (!opt.no_vtu) {
+  if (!opt.no_vtu || stopped) {
     write_kinetic_cell_vtu(out_dir / "fields.vtu", lm.mesh, moments, s, residual_cell, &hot);
     write_kinetic_boundary_vtu(out_dir / "boundary.vtu", lm.mesh, lm.geometry, fluxes, s);
   }
-  if (opt.cells_csv) write_kinetic_cells_csv(out_dir / "cells.csv", lm.mesh, lm.geometry, moments, s.length_scale,
+  if (opt.cells_csv || stopped) write_kinetic_cells_csv(out_dir / "cells.csv", lm.mesh, lm.geometry, moments, s.length_scale,
                                              residual_cell);
   KineticPatchSummary ps = summarize_kinetic_patches(lm.mesh, lm.geometry, fluxes, s);
   const TubeMassFlow m_pbc = tube_mass_flow(s, last.patch_mass_flow_pbc);
@@ -611,6 +611,7 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
   root.set("cis_iterations", static_cast<std::int64_t>(last.cis_iterations));
   root.set("converged", converged);
   root.set("stopped", stopped);
+  root.set("stopped_by_user", stopped);
   root.set("tolerance", tol);
   root.set("epsilon", finite_or_null(last.change.epsilon));
   root.set("eps_rho", finite_or_null(last.change.rho));
@@ -774,6 +775,24 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
   }
   root.set("patches", std::move(ps.patches));
   {
+    json::Value diag;
+    diag.set("state", "corrected_f");
+    diag.set("inlet_kg_s", mass_flow_to_si(s, ps.mdot_in));
+    diag.set("outlet_kg_s", mass_flow_to_si(s, ps.mdot_out));
+    const double scale = std::max(std::abs(ps.mdot_in), std::abs(ps.mdot_out));
+    const bool valid = ps.has_in && ps.has_out && scale > 0.0;
+    diag.set("relative_imbalance", valid ? finite_or_null((ps.mdot_out - ps.mdot_in) / scale) : json::Value());
+    diag.set("valid", valid);
+    diag.set("warning", valid && std::abs(ps.mdot_out - ps.mdot_in) / scale > cfg.gsis.mass_balance_tolerance);
+    json::Value correction;
+    correction.set("epsilon", n_iter > 0 ? finite_or_null(last.pbc_change.epsilon) : json::Value());
+    correction.set("rho", n_iter > 0 ? finite_or_null(last.pbc_change.rho) : json::Value());
+    correction.set("u", n_iter > 0 ? finite_or_null(last.pbc_change.u) : json::Value());
+    correction.set("T", n_iter > 0 ? finite_or_null(last.pbc_change.T) : json::Value());
+    diag.set("last_pbc_correction", std::move(correction));
+    root.set("conservation_diagnostics", std::move(diag));
+  }
+  {
     json::Value mf = tube_mass_flow_json(s, ps.mdot_in, ps.has_in, ps.mdot_out, ps.has_out);
     if (!mf.is_null()) root.set("mass_flow", std::move(mf));
   }
@@ -847,6 +866,17 @@ int cmd_run(std::span<const std::string> args) {
   const std::filesystem::path out_dir =
       opt.out_dir.empty() ? std::filesystem::path("runs") / "gsis" / path_from_utf8(cfg.case_info.name)
                           : path_from_utf8(opt.out_dir);
+  if ((opt.mode.empty() && cfg.case_info.mode == SolverMode::Nsf) || opt.mode == "nsf") {
+    std::vector<std::string> a = {opt.case_file, "--out", path_to_utf8(out_dir), "--iterations",
+                                std::to_string(opt.max_iter > 0 ? opt.max_iter : cfg.gsis.max_iterations),
+                                "--tolerance", std::format("{:.17g}", opt.tol > 0 ? opt.tol : cfg.gsis.tolerance)};
+    if (opt.print_every >= 0) a.insert(a.end(), {"--print-every", std::to_string(std::max(1LL, opt.print_every))});
+    if (opt.threads > 0) a.insert(a.end(), {"--threads", std::to_string(opt.threads)});
+    if (opt.no_vtu) a.push_back("--no-vtu");
+    if (opt.cells_csv) a.push_back("--cells-csv");
+    if (!opt.init_from.empty()) a.insert(a.end(), {"--restart", opt.init_from});
+    return run_nsf_case(a, cfg);
+  }
   if (!gsis_mode) return run_cis_mode(opt, cfg, out_dir);
   return run_gsis_mode(opt, cfg, out_dir);
 }

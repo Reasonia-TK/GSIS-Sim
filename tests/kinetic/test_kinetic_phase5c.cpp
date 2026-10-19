@@ -14,6 +14,7 @@
 
 #include "kinetic/kinetic_output.hpp"
 #include "kinetic/kinetic_solver.hpp"
+#include "kinetic/memory_estimate.hpp"
 #include "kinetic_test_cases.hpp"
 #include "mesh/section_cut.hpp"
 
@@ -23,6 +24,66 @@ using gsis::test::make_kinetic_box;
 using gsis::test::make_kinetic_case;
 using Catch::Approx;
 using Catch::Matchers::ContainsSubstring;
+
+TEST_CASE("kinetic: SI patch output separates central heat and transported energy", "[kinetic][patch]") {
+  const auto lm = make_kinetic_box({1, 1, 1}, {0, 0, 0}, {1, 1, 1},
+                                  {"wall", "wall", "wall", "wall", "wall", "wall"});
+  const auto cfg = make_kinetic_case({{"wall", "diffuse_wall"}}, KineticCaseOptions{});
+  const auto setup = kinetic::build_kinetic_setup(cfg, lm.mesh, lm.geometry, parse_kinetic_params(cfg));
+  BoundaryKineticFluxes flux;
+  const auto nb = static_cast<std::size_t>(lm.mesh.n_boundary_faces());
+  flux.F_plus.resize(nb);
+  flux.F_minus.resize(nb);
+  flux.face_state.resize(nb);
+  const Vec3 u{0.3, -0.2, 0.1};
+  const Vec3 q{0.07, -0.04, 0.02};
+  for (std::size_t b = 0; b < nb; ++b) {
+    const auto f = static_cast<std::size_t>(lm.mesh.n_internal_faces()) + b;
+    const double area = lm.geometry.face_area[f] / (setup.length_scale * setup.length_scale);
+    const Vec3 n = lm.geometry.face_normal[f];
+    // 一様な単位密度・単位温度の NSF モーメント。熱と移流を区別できる流れを使う。
+    const double un = dot(u, n);
+    const Vec3 mom = u * un + n;
+    flux.F_plus[b] = {un * area, mom.x * area, mom.y * area, mom.z * area,
+                     ((2.5 + 0.5 * norm2(u)) * un + dot(q, n)) * area};
+    flux.face_state[b] = {1.0, u.x, u.y, u.z, 1.0};
+    // 1 面だけをパッチにして、互いに打ち消し合わない値を調べる。
+    auto mesh = lm.mesh;
+    mesh.patches[0].start = static_cast<Index>(f);
+    mesh.patches[0].count = 1;
+    const auto summary = summarize_kinetic_patches(mesh, lm.geometry, flux, setup);
+    const auto& p = summary.patches.as_array()[0];
+    const auto& ref = setup.derived.ref;
+    const double L2 = setup.length_scale * setup.length_scale;
+    CHECK(p.at("mass_flow_kg_s").as_double() == Approx(-un * area * ref.mass_flux * L2));
+    CHECK(p.at("heat_flow_W").as_double() == Approx(-dot(q, n) * area * ref.heat_flux * L2));
+    CHECK(p.at("energy_flow_W").as_double() == Approx(-flux.F_plus[b][4] * ref.heat_flux * L2));
+    for (int a = 0; a < 3; ++a)
+      CHECK(p.at("force_N").as_array()[a].as_double() == Approx(mom[a] * area * ref.pressure * L2));
+  }
+}
+
+TEST_CASE("kinetic: device memory estimate handles precision chunks and exhausted budgets", "[kinetic][memory]") {
+  const auto lm = make_kinetic_box({2, 2, 2}, {0, 0, 0}, {1, 1, 1},
+                                  {"wall", "wall", "wall", "wall", "wall", "wall"});
+  const auto cfg = make_kinetic_case({{"wall", "diffuse_wall"}}, KineticCaseOptions{});
+  auto params = parse_kinetic_params(cfg);
+  params.velocity_chunk = 37;
+  auto setup = kinetic::build_kinetic_setup(cfg, lm.mesh, lm.geometry, params);
+  const auto m = kinetic::estimate_device_memory(setup, 4LL << 30);
+  CHECK(m.at("fits").as_bool());
+  CHECK(m.at("distribution").as_int() == setup.n_cells() * setup.nv() * (params.precision == "fp64" ? 8LL : 4LL));
+  CHECK(m.at("chunk").as_int() == 37);
+  CHECK(m.at("workspace").as_int() == setup.n_cells() * (37LL * 4 * (params.precision == "fp64" ? 8 : 4) + 8));
+  CHECK(m.at("total").as_int() == m.at("distribution").as_int() + m.at("workspace").as_int() + m.at("overhead").as_int());
+  setup.params.velocity_chunk = 0;
+  const auto empty = kinetic::estimate_device_memory(setup, 1LL << 30);
+  CHECK_FALSE(empty.at("fits").as_bool());
+  CHECK(empty.at("chunk").as_int() == 0);
+  const auto automatic = kinetic::estimate_device_memory(setup, 4LL << 30);
+  CHECK(automatic.at("chunk").as_int() <= setup.nv());
+  CHECK(automatic.at("fits").as_bool());
+}
 
 TEST_CASE("kinetic: the section mass flow of a uniform flowing equilibrium is rho u_x times the area",
           "[kinetic][section]") {

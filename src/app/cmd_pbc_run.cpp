@@ -35,6 +35,7 @@
 #include "core/timer.hpp"
 #include "io/csv_writer.hpp"
 #include "io/vtu_writer.hpp"
+#include "kinetic/kinetic_output.hpp"
 #include "macro/linear_solver.hpp"
 #include "macro/macro_params.hpp"
 #include "macro/pbc_solver.hpp"
@@ -172,10 +173,10 @@ Options parse_options(std::span<const std::string> args) {
 
 }  // namespace
 
-int cmd_pbc_run(std::span<const std::string> args) {
+static int run_pbc_case(std::span<const std::string> args, const CaseConfig* configured) {
   const Options opt = parse_options(args);
   Timer total_timer;
-  const CaseConfig cfg = load_case(path_from_utf8(opt.case_file));
+  const CaseConfig cfg = configured ? *configured : load_case(path_from_utf8(opt.case_file));
   const DerivedQuantities d = derive_quantities(cfg);
   MacroParams params = parse_macro_params(cfg);
   if (!opt.advection.empty()) params.advection = opt.advection;
@@ -186,7 +187,6 @@ int cmd_pbc_run(std::span<const std::string> args) {
       opt.out_dir.empty() ? std::filesystem::path("runs") / "macro" / path_from_utf8(cfg.case_info.name)
                           : path_from_utf8(opt.out_dir);
   std::filesystem::create_directories(out_dir);
-  clear_stop_request(out_dir);
 
   Timer load_timer;
   const LoadedMesh lm = load_pmesh(cfg.mesh_path());
@@ -260,7 +260,10 @@ int cmd_pbc_run(std::span<const std::string> args) {
   std::fill(state.p.begin(), state.p.end(), 1.0);
   std::fill(state.T.begin(), state.T.end(), 1.0);
   std::fill(state.rho.begin(), state.rho.end(), 1.0);
-  if (!opt.restart.empty()) read_cells_csv(path_from_utf8(opt.restart), state);
+  if (!opt.restart.empty()) {
+    if (configured) state = read_kinetic_cells_csv(path_from_utf8(opt.restart), mesh.n_cells);
+    else read_cells_csv(path_from_utf8(opt.restart), state);
+  }
   PbcStageOptions stage;
   stage.max_iterations = static_cast<int>(opt.iterations);
   stage.cfl = cfl;
@@ -314,6 +317,7 @@ int cmd_pbc_run(std::span<const std::string> args) {
   summary.set("n_cells", static_cast<std::int64_t>(mesh.n_cells));
   summary.set("solver", build_description());
   summary.set("mode", "standalone_nsf");
+  if (configured) summary.set("mode", "nsf");
   summary.set("advection", params.advection);
   summary.set("linear_solver", params.linear_solver + "+" + params.preconditioner);
   summary.set("linear_rtol", params.linear_rtol);
@@ -329,6 +333,14 @@ int cmd_pbc_run(std::span<const std::string> args) {
   summary.set("iterations", static_cast<std::int64_t>(rep.iterations));
   summary.set("converged", rep.converged);
   summary.set("stopped", rep.stopped);
+  summary.set("stopped_by_user", rep.stopped);
+  if (configured) {
+    summary.set("epsilon", rep.final_update);
+    summary.set("residual", rep.final_residual_mass);
+    summary.set("wall_time_s", t_run);
+    summary.set("memory_bytes", 0);
+    summary.set("n_velocity", 0);
+  }
   summary.set("Kn", d.Kn);
   summary.set("delta", d.delta_from_Kn);
   {
@@ -374,6 +386,33 @@ int cmd_pbc_run(std::span<const std::string> args) {
     for (int k = 1; k <= 3; ++k) force.push_back(pflux[p][k] * force_si);
     e.set("force_N", std::move(force));
     e.set("energy_flow_W", pflux[p][4] * power_si);
+    // 共通キーは流入が正。旧 pbc-run の energy_flow_W と mass_flow_kg_s は外向きを維持。
+    if (configured) {
+      e.set("mass_flow_kg_s", -flow_nd[p] * mass_flow_si);
+      e.set("energy_flow_W", -pflux[p][4] * power_si);
+    }
+    double heat = 0.0;
+    const auto& bd = solver.last_boundary();
+    const auto& geom = solver.geometry();
+    const auto& patch = mesh.patches[p];
+    double area = 0.0;
+    for (Index f = patch.start; f < patch.end(); ++f) {
+      const auto b = static_cast<std::size_t>(f - mesh.n_internal_faces());
+      const auto& F = bd.flux[b];
+      const auto fi = static_cast<std::size_t>(f);
+      const double A = geom.face_area[fi];
+      area += A;
+      const auto& bc = solver.boundary_conditions()[p];
+      if (bc.kind == macro::MacroBoundaryKind::PeriodicSlab) continue;
+      // 勾配に使うラグ付きの状態ではなく、最終の半空間分布のモーメントを使う。
+      const auto w = macro::boundary_face_state(bc, macro::BoundaryFaceExtra{}, bd.reconstructed[b], geom.face_normal[fi]);
+      const Vec3 u = macro::velocity_of(w);
+      heat += F[4] - u.x * F[1] - u.y * F[2] - u.z * F[3] + 0.5 * norm2(u) * F[0] -
+              1.5 * w[0] * dot(u, geom.face_normal[fi]) * A;
+    }
+    e.set("heat_flow_W", -heat * power_si);
+    e.set("area_m2", area * ref.length * ref.length);
+    e.set("faces", patch.count);
     json::Value nd;
     for (int k = 0; k < 5; ++k) nd.push_back(pflux[p][k]);
     e.set("flux_nondim", std::move(nd));
@@ -405,7 +444,7 @@ int cmd_pbc_run(std::span<const std::string> args) {
     summary.set("timing_seconds", std::move(timing));
   }
 
-  if (opt.vtu) {
+  if (opt.vtu || rep.stopped) {
     const std::size_t nc = static_cast<std::size_t>(mesh.n_cells);
     std::vector<double> p(nc), rho(nc), T(nc), Ma(nc), Kn(nc), rmass(nc);
     std::vector<Vec3> U(nc);
@@ -425,11 +464,22 @@ int cmd_pbc_run(std::span<const std::string> args) {
     w.add_cell_scalar("p", p);
     w.add_cell_scalar("rho", rho);
     w.add_cell_vector("U", U);
+    if (configured) w.add_cell_vector("u", U);
     w.add_cell_scalar("T", T);
     w.add_cell_scalar("Ma", Ma);
     w.add_cell_scalar("Kn_local", Kn);
     w.add_cell_scalar("residual_mass_nondim", rmass);
     w.write(out_dir / "cells.vtu");
+    if (configured) {
+      kinetic::KineticSetup output;
+      output.derived = d;
+      output.length_scale = ref.length;
+      output.mu0 = d.mu_hat0;
+      output.omega = cfg.gas.omega;
+      std::vector<double> residual(nc);
+      for (std::size_t c = 0; c < nc; ++c) residual[c] = R[c][0];
+      write_kinetic_cell_vtu(out_dir / "fields.vtu", mesh, solver.nsf_moments(), output, residual);
+    }
 
     const PbcBoundaryFaceData& bd = solver.last_boundary();
     const std::size_t nb = static_cast<std::size_t>(mesh.n_boundary_faces());
@@ -463,7 +513,7 @@ int cmd_pbc_run(std::span<const std::string> args) {
     wb.add_cell_vector("face_U", Uface);
     wb.write(out_dir / "boundary.vtu");
   }
-  if (opt.cells_csv) {
+  if (opt.cells_csv || rep.stopped) {
     // セル中心の座標(L_ref 単位)と無次元の値(後処理・中心線の取り出し用)
     CsvWriter cells(out_dir / "cells.csv", {"cell", "x", "y", "z", "volume", "p", "ux", "uy", "uz", "T", "rho"});
     const MeshGeometry& g = solver.geometry();
@@ -485,5 +535,8 @@ int cmd_pbc_run(std::span<const std::string> args) {
   print_item("出力", path_to_utf8(out_dir));
   return 0;
 }
+
+int cmd_pbc_run(std::span<const std::string> args) { return run_pbc_case(args, nullptr); }
+int run_nsf_case(std::span<const std::string> args, const CaseConfig& config) { return run_pbc_case(args, &config); }
 
 }  // namespace gsis::cli

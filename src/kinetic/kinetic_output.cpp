@@ -197,6 +197,7 @@ KineticPatchSummary summarize_kinetic_patches(const PolyMesh& mesh, const MeshGe
     double F[5] = {0, 0, 0, 0, 0};
     double area = 0.0;
     double face[5] = {0, 0, 0, 0, 0};
+    double heat = 0.0;
     for (Index f = patch.start; f < patch.end(); ++f) {
       const auto b = static_cast<std::size_t>(f - n_int);
       const double A = geometry.face_area[static_cast<std::size_t>(f)] / L2;
@@ -204,6 +205,13 @@ KineticPatchSummary summarize_kinetic_patches(const PolyMesh& mesh, const MeshGe
         F[k] += fluxes.F_plus[b][k] + fluxes.F_minus[b][k];
         face[k] += A * fluxes.face_state[b][k];
       }
+      const auto& w = fluxes.face_state[b];  // rho, ux, uy, uz, T
+      const Vec3 u{w[1], w[2], w[3]};
+      const Vec3 n = geometry.face_normal[static_cast<std::size_t>(f)];
+      const auto& fp = fluxes.F_plus[b];
+      const auto& fm = fluxes.F_minus[b];
+      heat += fp[4] + fm[4] - u.x * (fp[1] + fm[1]) - u.y * (fp[2] + fm[2]) -
+              u.z * (fp[3] + fm[3]) + 0.5 * norm2(u) * (fp[0] + fm[0]) - 1.5 * w[0] * w[4] * dot(u, n) * A;
       area += A;
     }
     const kinetic::PatchCondition* pc = nullptr;
@@ -220,6 +228,14 @@ KineticPatchSummary summarize_kinetic_patches(const PolyMesh& mesh, const MeshGe
     pj.set("mdot_kg_s", mass_flow_to_si(s, F[0]));
     pj.set("momentum_flux_nd", json::Array{F[1], F[2], F[3]});
     pj.set("energy_flux_nd", F[4]);
+    // 質量・熱・全エネルギーは領域への流入が正。熱は面の局所静止系の三次中心モーメント。
+    const auto& ref = s.derived.ref;
+    pj.set("area_m2", area * L2);
+    pj.set("mass_flow_kg_s", -mass_flow_to_si(s, F[0]));
+    pj.set("heat_flow_W", -heat * ref.heat_flux * L2);
+    pj.set("energy_flow_W", -F[4] * ref.heat_flux * L2);
+    pj.set("force_N", json::Array{F[1] * ref.pressure * L2, F[2] * ref.pressure * L2,
+                                  F[3] * ref.pressure * L2});
     if (area > 0.0) {
       pj.set("face_rho_nd", face[0] / area);
       pj.set("face_u_nd", json::Array{face[1] / area, face[2] / area, face[3] / area});

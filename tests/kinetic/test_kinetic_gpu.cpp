@@ -13,6 +13,7 @@
 
 #include "gpu/device_info.hpp"
 #include "kinetic/kinetic_solver.hpp"
+#include "kinetic/memory_estimate.hpp"
 #include "kinetic_test_cases.hpp"
 
 using namespace gsis;
@@ -20,6 +21,21 @@ using gsis::test::KineticBc;
 using gsis::test::KineticCaseOptions;
 using gsis::test::make_kinetic_box;
 using gsis::test::make_kinetic_case;
+
+TEST_CASE("kinetic_gpu: estimated arrays equal allocated memory at an explicit chunk", "[kinetic_gpu][memory]") {
+  if (gpu::device_count() == 0) SKIP("CUDA デバイスなし");
+  const auto lm = make_kinetic_box({2, 2, 2}, {0, 0, 0}, {1, 1, 1},
+                                  {"wall", "wall", "wall", "wall", "sym", "sym"});
+  for (const auto* precision : {"fp32", "fp64"}) {
+    KineticCaseOptions o;
+    o.kinetic = std::string("backend = \"cuda\"\nvelocity_chunk = 37\nprecision = \"") + precision + "\"\n";
+    const auto cfg = make_kinetic_case({{"wall", "diffuse_wall"}, {"sym", "symmetry"}}, o);
+    KineticSolver solver(cfg, lm.mesh, lm.geometry, parse_kinetic_params(cfg));
+    const auto memory = kinetic::estimate_device_memory(solver.setup(), 4LL << 30);
+    CHECK(memory.at("chunk").as_int() == solver.backend().chunk_width());
+    CHECK(memory.at("total").as_int() == static_cast<std::int64_t>(solver.backend().memory_bytes()));
+  }
+}
 
 namespace {
 

@@ -7,6 +7,7 @@
 #   kinetic_output.*        cis-run の出力(VTU・CSV・JSON)
 set(_gsis_kinetic_sources
   kinetic_params.cpp
+  memory_estimate.cpp
   kinetic_setup.cpp
   kinetic_backend_cpu.cpp
   kinetic_backend_factory.cpp

@@ -86,3 +86,21 @@ gsis_add_cli_failure_test(cli:bad_case 1 "nothing\\.toml" check-case "${_cli_dir
 add_subdirectory(kinetic)
 add_subdirectory(macro)
 add_subdirectory(gsis)
+
+# S2 の CLI 契約(標準出力全体の JSON 解析、停止時の出力、NSF と従来 PBC の一致)。
+foreach(_mode cis gsis nsf)
+  foreach(_scenario run stop)
+    add_test(NAME s2_cli:${_mode}_${_scenario}
+      COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:gsis-solver>"
+        "-DCASE=${CMAKE_CURRENT_BINARY_DIR}/kinetic/cli/cis_smoke.toml"
+        "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/s2/${_mode}_${_scenario}"
+        "-DMODE=${_mode}" "-DSCENARIO=${_scenario}" -P "${CMAKE_CURRENT_SOURCE_DIR}/s2_cli.cmake")
+    set_tests_properties(s2_cli:${_mode}_${_scenario} PROPERTIES FIXTURES_REQUIRED cli_meshes)
+  endforeach()
+endforeach()
+add_test(NAME s2_cli:check_json
+  COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:gsis-solver>"
+    "-DCASE=${CMAKE_CURRENT_BINARY_DIR}/kinetic/cli/cis_smoke.toml"
+    "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/s2/check" -DMODE=cis -DSCENARIO=check
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/s2_cli.cmake")
+set_tests_properties(s2_cli:check_json PROPERTIES FIXTURES_REQUIRED cli_meshes)

@@ -1,0 +1,51 @@
+# S2 の小さな箱: 自動速度格子と NSF。CIS/GSIS は --mode で選べる。
+[case]
+name = "s2_auto_box"
+mesh = "mesh/box.pmesh"
+mode = "nsf"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m
+T0 = 400.0                         # K
+p_ref = 100.0
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 400.0
+pressure = 100.0
+
+[[boundary]]
+patch = "outlet"
+type = "pressure_outlet"
+pressure = 50.0
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 200.0
+velocity = [100.0, 0.0, 0.0]
+
+[velocity_grid]
+auto = true
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5
+
+[kinetic]
+backend = "cpu"
+positivity_limiter = true
+pseudo_time = "velocity"
+pseudo_cfl = 5.0
+
+[macro]
+init_iterations = 0

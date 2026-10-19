@@ -33,7 +33,7 @@ using gsis::cli::Command;
 
 constexpr Command kCommands[] = {
     {"run", "ケースの mode(gsis / cis)に応じて GSIS か CIS 単独で定常解を求める",
-     "run <case.toml> [--out <dir>] [--mode gsis|cis] [--max-iter N] [--min-iter N] [--tol X]\n"
+     "run <case.toml> [--out <dir>] [--mode gsis|cis|nsf] [--max-iter N] [--min-iter N] [--tol X]\n"
      "                [--backend cpu|cuda] [--precision fp32|fp64] [--set [kinetic.|macro.|gsis.]key=value]...\n"
      "                [--threads N] [--print-every N] [--vtu-every N] [--dump-every N] [--no-vtu] [--cells-csv]\n"
      "                [--init-from <cells.csv>] [--save-init <cells.csv>] [--sections <位置の並び>]",
@@ -42,7 +42,7 @@ constexpr Command kCommands[] = {
      "mesh-info <file.pmesh> [--vtu <out.vtu>] [--boundary-vtu <out.vtu>] [--ascii]",
      gsis::cli::cmd_mesh_info},
     {"check-case", "ケース定義(TOML)とメッシュを読み、導出量とメモリ量を表示する",
-     "check-case <case.toml>", gsis::cli::cmd_check_case},
+     "check-case <case.toml> [--json [--no-mesh] [--free-vram-bytes N]]", gsis::cli::cmd_check_case},
     {"gpu-info", "GPU の情報を表示する(--smoke で GPU と CPU のモーメント計算を比べる)",
      "gpu-info [--smoke] [--cells <N>]", gsis::cli::cmd_gpu_info},
     {"cis-run", "運動論ソルバー(CIS)だけで定常解を求める",

@@ -21,7 +21,7 @@
 
 namespace gsis {
 
-enum class SolverMode { Gsis, Cis };
+enum class SolverMode { Gsis, Cis, Nsf };
 
 enum class BoundaryType {
   DiffuseWall,     // 静止(または移動)完全拡散壁: temperature が必須、velocity は任意
@@ -83,6 +83,8 @@ struct BoundarySpec {
 
 // [velocity_grid]
 struct VelocityGridSection {
+  bool automatic = false;
+  double T_min = 0.0, T_max = 0.0, u_max = 0.0;  // 自動決定に使った境界の値(SI)
   std::array<int, 3> n{};       // 各軸の点数
   std::array<double, 3> lo{};   // 各軸の下限(単位 sqrt(R T0))
   std::array<double, 3> hi{};   // 各軸の上限(単位 sqrt(R T0))

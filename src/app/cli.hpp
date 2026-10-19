@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "config/case_config.hpp"
 
 namespace gsis::cli {
 
@@ -25,6 +26,7 @@ int cmd_check_case(std::span<const std::string> args);
 int cmd_gpu_info(std::span<const std::string> args);
 int cmd_cis_run(std::span<const std::string> args);  // フェーズ 2(app/cmd_cis_run.cpp)
 int cmd_pbc_run(std::span<const std::string> args);  // フェーズ 3(app/cmd_pbc_run.cpp)
+int run_nsf_case(std::span<const std::string> args, const CaseConfig& config);
 int cmd_run(std::span<const std::string> args);      // フェーズ 4(app/cmd_run.cpp。GSIS と CIS 単独)
 
 // 引数の誤り(使い方を表示して終了コード 2 にする)
@@ -40,7 +42,7 @@ void print_item(std::string_view label, std::string_view value);  // 「  label 
 
 // 穏やかな停止(GUI 向け): 出力先に STOP という名前のファイルができたら、run・cis-run・pbc-run はその反復の
 // 終わりで結果(summary.json・VTU など)を書いて正常に終える(summary.json の "stopped" が true)。
-// 古い STOP は実行の初めに消す
+// STOP は保持する。再実行する呼び出し側で削除する。
 inline constexpr const char* kStopFileName = "STOP";
 bool stop_requested(const std::filesystem::path& out_dir);
 void clear_stop_request(const std::filesystem::path& out_dir);

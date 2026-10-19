@@ -74,6 +74,33 @@ std::string replace(std::string s, const std::string& from, const std::string& t
 
 }  // namespace
 
+TEST_CASE("case TOML: automatic midpoint grid follows boundary temperatures and speeds", "[config][auto]") {
+  auto text = replace(kSpecExample, "n = [30, 24, 24]", "auto = true");
+  const auto begin = text.find("range = ");
+  text.erase(begin, text.find('\n', begin) - begin);
+  text = replace(text, "temperature = 273.15\n\n[velocity_grid]", "temperature = 100.0\nvelocity = [300.0, 400.0, 0.0]\n\n[velocity_grid]");
+  auto cfg = parse_case_toml(text);
+  const auto& v = cfg.velocity_grid;
+  const double R = cfg.gas.specific_gas_constant();
+  const double limit = 500.0 + 5.0 * std::sqrt(R * 273.15);
+  const int expected = 2 * static_cast<int>(std::ceil(limit / (0.7 * std::sqrt(R * 100.0))));
+  CHECK(v.automatic);
+  CHECK(v.T_min == 100.0);
+  CHECK(v.T_max == 273.15);
+  CHECK(v.u_max == 500.0);
+  for (int a = 0; a < 3; ++a) {
+    CHECK(v.n[a] == expected);
+    CHECK(v.n[a] % 2 == 0);
+    CHECK(v.hi[a] == Approx(limit / std::sqrt(R * cfg.conditions.T0)));
+    CHECK(v.lo[a] == -v.hi[a]);
+    CHECK((v.hi[a] - v.lo[a]) / v.n[a] <= 0.7 * std::sqrt(100.0 / cfg.conditions.T0));
+  }
+  CHECK_THROWS_WITH(parse_case_toml(replace(kSpecExample, "n = [30, 24, 24]", "auto = true\nn = [30, 24, 24]")),
+                    ContainsSubstring("併用"));
+  CHECK_THROWS(parse_case_toml(replace(text, "[300.0, 400.0, 0.0]", "[1e200, 0.0, 0.0]")));
+  CHECK(parse_case_toml(replace(kSpecExample, "mode = \"gsis\"", "mode = \"nsf\"")).case_info.mode == SolverMode::Nsf);
+}
+
 TEST_CASE("case TOML: spec example is parsed", "[config]") {
   const CaseConfig cfg = parse_case_toml(kSpecExample, path_from_utf8("cases/tube/case.toml"));
   CHECK(cfg.case_info.name == "tube_vacuum_delta10");

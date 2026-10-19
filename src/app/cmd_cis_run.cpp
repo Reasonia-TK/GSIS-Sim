@@ -210,7 +210,6 @@ int cmd_cis_run(std::span<const std::string> args) {
       opt.out_dir.empty() ? std::filesystem::path("runs") / "kinetic" / path_from_utf8(cfg.case_info.name)
                           : path_from_utf8(opt.out_dir);
   std::filesystem::create_directories(out_dir);
-  clear_stop_request(out_dir);
 
   Timer total_timer;
   const LoadedMesh lm = load_pmesh(cfg.mesh_path());
@@ -335,11 +334,11 @@ int cmd_cis_run(std::span<const std::string> args) {
 
   const KineticMoments moments = solver.moments();
   const BoundaryKineticFluxes fluxes = solver.boundary_fluxes();
-  if (!opt.no_vtu) {
+  if (!opt.no_vtu || stopped) {
     write_kinetic_cell_vtu(out_dir / "fields.vtu", lm.mesh, moments, s, solver.residual_per_cell());
     write_kinetic_boundary_vtu(out_dir / "boundary.vtu", lm.mesh, lm.geometry, fluxes, s);
   }
-  if (opt.cells_csv) {
+  if (opt.cells_csv || stopped) {
     write_kinetic_cells_csv(out_dir / "cells.csv", lm.mesh, lm.geometry, moments, s.length_scale,
                             solver.residual_per_cell());
   }
@@ -371,6 +370,7 @@ int cmd_cis_run(std::span<const std::string> args) {
   root.set("iterations", static_cast<std::int64_t>(last.iteration));
   root.set("converged", converged);
   root.set("stopped", stopped);
+  root.set("stopped_by_user", stopped);
   root.set("tolerance", tol);
   root.set("epsilon", last.has_epsilon ? last.epsilon : json::Value(nullptr));
   root.set("eps_rho", last.has_epsilon ? last.eps_rho : json::Value(nullptr));

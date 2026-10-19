@@ -5,6 +5,8 @@
 #include <format>
 #include <string>
 #include <vector>
+#include <charconv>
+#include <cstdio>
 
 #include "app/cli.hpp"
 #include "config/case_config.hpp"
@@ -12,6 +14,10 @@
 #include "core/error.hpp"
 #include "core/math.hpp"
 #include "core/paths.hpp"
+#include "core/json.hpp"
+#include "core/log.hpp"
+#include "kinetic/memory_estimate.hpp"
+#include "macro/macro_params.hpp"
 #include "mesh/mesh_quality.hpp"
 #include "mesh/pmesh_io.hpp"
 #include "physics/maxwell.hpp"
@@ -27,9 +33,192 @@ namespace {
 
 std::string si(double v, std::string_view unit) { return std::format("{:.6g} {}", v, unit); }
 
+// JSON 経路は途中の入力・メッシュエラーでも、それまでに求まった項目を保持する。
+int check_json(std::span<const std::string> args) {
+  json::Value root, warnings(json::Array{}), errors(json::Array{});
+  root.set("schema_version", 1);
+  root.set("mesh_loaded", false);
+  root.set("memory", nullptr);
+  int code = 0;
+  set_log_sink([&](LogLevel level, std::string_view message) {
+    if (level == LogLevel::Warn) warnings.push_back(std::string(message));
+    else if (level == LogLevel::Error) std::fprintf(stderr, "%.*s\n", static_cast<int>(message.size()), message.data());
+  });
+  try {
+    std::string file;
+    bool no_mesh = false;
+    std::int64_t free_bytes = static_cast<std::int64_t>(14.7 * (1LL << 30));
+    std::string free_source = "default_14.7_GiB";
+    bool explicit_free = false;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+      const auto& a = args[i];
+      if (a == "--json") continue;
+      if (a == "--no-mesh") { no_mesh = true; continue; }
+      if (a == "--free-vram-bytes") {
+        if (++i == args.size()) throw UsageError{"--free-vram-bytes の値がありません"};
+        const auto& s = args[i];
+        const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), free_bytes);
+        if (ec != std::errc{} || end != s.data() + s.size() || free_bytes <= 0)
+          throw UsageError{"--free-vram-bytes は正の整数です"};
+        explicit_free = true;
+        free_source = "argument";
+      } else if (!a.empty() && a[0] == '-') throw UsageError{"知らないオプション " + a + " です"};
+      else {
+        if (!file.empty()) throw UsageError{"ケースファイルは 1 つだけ指定してください"};
+        file = a;
+      }
+    }
+    if (file.empty()) throw UsageError{"ケースファイル(.toml)を指定してください"};
+    const CaseConfig cfg = load_case(path_from_utf8(file));
+    const auto d = derive_quantities(cfg);
+    const auto kp = parse_kinetic_params(cfg);
+    (void)parse_macro_params(cfg);
+    const auto& ref = d.ref;
+    json::Value input, gas, conditions, derived, reference, grid;
+    input.set("name", cfg.case_info.name);
+    input.set("mode", to_string(cfg.case_info.mode));
+    input.set("case_file", file);
+    input.set("mesh", path_to_utf8(cfg.mesh_path()));
+    gas.set("molecular_mass_kg", cfg.gas.molecular_mass);
+    gas.set("mu_ref_Pa_s", cfg.gas.mu_ref);
+    gas.set("T_ref_K", cfg.gas.T_ref);
+    gas.set("omega", cfg.gas.omega);
+    gas.set("Pr", cfg.gas.Pr);
+    gas.set("gamma", cfg.gas.gamma);
+    input.set("gas", std::move(gas));
+    conditions.set("L_ref_m", cfg.conditions.L_ref);
+    conditions.set("T0_K", cfg.conditions.T0);
+    conditions.set("delta_rp", cfg.conditions.delta_rp ? json::Value(*cfg.conditions.delta_rp) : json::Value());
+    conditions.set("Kn", cfg.conditions.Kn ? json::Value(*cfg.conditions.Kn) : json::Value());
+    conditions.set("p_ref_Pa", cfg.conditions.p_ref ? json::Value(*cfg.conditions.p_ref) : json::Value());
+    input.set("conditions", std::move(conditions));
+    root.set("input", std::move(input));
+    derived.set("R_J_kg_K", d.R);
+    derived.set("mu_Pa_s", d.mu0);
+    derived.set("mean_free_path_m", d.mean_free_path);
+    derived.set("Kn", d.Kn);
+    derived.set("delta_rp", d.delta_from_Kn);
+    root.set("derived", std::move(derived));
+    reference.set("length_m", ref.length);
+    reference.set("temperature_K", ref.temperature);
+    reference.set("pressure_Pa", ref.pressure);
+    reference.set("density_kg_m3", ref.density);
+    reference.set("velocity_m_s", ref.velocity);
+    reference.set("time_s", ref.time);
+    reference.set("distribution_kg_s3_m6", ref.distribution);
+    reference.set("viscosity_Pa_s", ref.viscosity);
+    reference.set("heat_flux_W_m2", ref.heat_flux);
+    reference.set("mass_flux_kg_m2_s", ref.mass_flux);
+    reference.set("mass_flow_scale_kg_s", d.mass_flow_scale);
+    root.set("reference", std::move(reference));
+    grid.set("auto", cfg.velocity_grid.automatic);
+    json::Value counts(json::Array{}), ranges(json::Array{}), ranges_si(json::Array{}), steps(json::Array{});
+    std::int64_t nv = 1;
+    for (int a = 0; a < 3; ++a) {
+      const auto& v = cfg.velocity_grid;
+      counts.push_back(v.n[a]);
+      ranges.push_back(json::Array{v.lo[a], v.hi[a]});
+      ranges_si.push_back(json::Array{v.lo[a] * ref.velocity, v.hi[a] * ref.velocity});
+      steps.push_back((v.hi[a] - v.lo[a]) / v.n[a]);
+      nv *= v.n[a];
+    }
+    grid.set("n", std::move(counts));
+    grid.set("range", std::move(ranges));
+    grid.set("range_m_s", std::move(ranges_si));
+    grid.set("step", std::move(steps));
+    grid.set("n_velocity", nv);
+    if (cfg.velocity_grid.automatic) {
+      grid.set("T_min_K", cfg.velocity_grid.T_min);
+      grid.set("T_max_K", cfg.velocity_grid.T_max);
+      grid.set("u_max_m_s", cfg.velocity_grid.u_max);
+    }
+    root.set("velocity_grid", std::move(grid));
+    json::Value patches(json::Array{});
+    for (const auto& b : cfg.boundaries) {
+      json::Value p;
+      p.set("name", b.patch);
+      p.set("type", to_string(b.type));
+      p.set("faces", nullptr);
+      p.set("area_m2", nullptr);
+      p.set("temperature_K", b.temperature ? json::Value(*b.temperature) : json::Value());
+      p.set("pressure_Pa", b.pressure ? json::Value(*b.pressure) :
+            b.type == BoundaryType::PressureInlet ? json::Value(d.p_in) : json::Value());
+      p.set("velocity_m_s", b.velocity ? json::Value(json::Array{b.velocity->x, b.velocity->y, b.velocity->z}) : json::Value());
+      if (b.type == BoundaryType::PressureInlet) p.set("tangential_velocity", b.inlet_zero_tangential ? "zero" : "extrapolate");
+      patches.push_back(std::move(p));
+    }
+    root.set("patches", std::move(patches));
+    if (!no_mesh) {
+      const auto lm = load_pmesh(cfg.mesh_path());
+      root.set("mesh_loaded", true);
+      json::Value mesh;
+      mesh.set("n_cells", lm.mesh.n_cells);
+      mesh.set("n_faces", lm.mesh.n_faces());
+      mesh.set("volume_m3", lm.report.total_volume);
+      root.set("mesh", std::move(mesh));
+      // at() は読み取り専用なので、面情報を加えた配列を作り直す。
+      json::Value pp = root.at("patches");
+      const auto summaries = summarize_patches(lm.mesh, lm.geometry);
+      for (auto& p : pp.as_array()) for (const auto& s : summaries) {
+        if (p.at("name").as_string() == s.name) { p.set("faces", s.n_faces); p.set("area_m2", s.area); }
+      }
+      root.set("patches", std::move(pp));
+      const VelocityGrid vgrid(cfg.velocity_grid.n, cfg.velocity_grid.lo, cfg.velocity_grid.hi);
+      for (const auto& e : check_case_against_mesh(cfg, lm.mesh, lm.geometry, vgrid)) errors.push_back(e);
+#if GSIS_WITH_CUDA
+      if (!explicit_free && gpu::device_count() > 0) {
+        free_bytes = static_cast<std::int64_t>(gpu::memory_info(0).free);
+        free_source = "cuda_device_0";
+      }
+#else
+      (void)explicit_free;
+#endif
+      if (cfg.case_info.mode == SolverMode::Nsf) {
+        json::Value memory;
+        for (const auto* key : {"distribution", "workspace", "overhead", "chunk", "total"}) memory.set(key, 0);
+        memory.set("free", free_bytes);
+        memory.set("reserve", 1024LL * 1024 * 1024);
+        memory.set("budget", std::max(0LL, free_bytes - 1024LL * 1024 * 1024));
+        memory.set("fits", true);
+        memory.set("model", "nsf_cpu");
+        memory.set("free_source", free_source);
+        root.set("memory", std::move(memory));
+      } else if (errors.as_array().empty()) {
+        const auto setup = kinetic::build_kinetic_setup(cfg, lm.mesh, lm.geometry, kp);
+        auto memory = kinetic::estimate_device_memory(setup, free_bytes);
+        memory.set("free_source", free_source);
+        if (!memory.at("fits").as_bool()) warnings.push_back("VRAM 予算に収まりません。セル数または速度点数を減らしてください");
+        root.set("memory", std::move(memory));
+      }
+    }
+  } catch (const UsageError& e) { errors.push_back(e.message); code = 2; }
+    catch (const std::exception& e) { errors.push_back(e.what()); code = 1; }
+  set_log_sink({});
+  if (!errors.as_array().empty() && code == 0) code = 1;
+  root.set("ok", code == 0);
+  root.set("errors", std::move(errors));
+  root.set("warnings", std::move(warnings));
+  std::string output;
+  try {
+    output = json::dump(root) + "\n";
+  } catch (const std::exception& e) {
+    // 有限の入力でも導出計算がオーバーフローする場合がある。出力自体の失敗もJSONにする。
+    json::Value failure;
+    failure.set("schema_version", 1);
+    failure.set("ok", false);
+    failure.set("errors", json::Array{std::string(e.what())});
+    failure.set("warnings", root.at("warnings"));
+    output = json::dump(failure) + "\n";
+    code = 1;
+  }
+  std::fwrite(output.data(), 1, output.size(), stdout);
+  return code;
+}
+
 }  // namespace
 
 int cmd_check_case(std::span<const std::string> args) {
+  if (std::find(args.begin(), args.end(), "--json") != args.end()) return check_json(args);
   std::string case_file;
   for (const std::string& a : args) {
     if (!a.empty() && a[0] == '-') throw UsageError{"知らないオプション " + a + " です"};

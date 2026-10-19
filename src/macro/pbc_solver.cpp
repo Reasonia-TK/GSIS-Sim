@@ -1357,11 +1357,12 @@ PbcStageReport PbcSolver::run_stage(const PbcStageInput& input, const PbcStageOp
     if (options.on_iteration) options.on_iteration(info);
     GSIS_CHECK(std::isfinite(info.update_max()),
                std::format("PBC の反復 {} で更新量が有限でなくなりました(発散)", m));
+    report.stopped = options.should_stop && options.should_stop();
     if (info.update_max() < options.tolerance) {
       report.converged = true;
       break;
     }
-    if (options.should_stop && options.should_stop()) {
+    if (report.stopped) {
       report.stopped = true;
       break;
     }
@@ -1476,6 +1477,20 @@ void PbcSolver::linearize_T(const CellMacroState& state, double cfl, BlockCsrMat
   residual_frozen(state);
   for (Index c = 0; c < mesh_.n_cells; ++c) dt_[zu(c)] = cfl * geo_.cell_volume[zu(c)] / lambda_[zu(c)];
   assemble_T(A, rhs);
+}
+
+KineticMoments PbcSolver::nsf_moments() const {
+  KineticMoments m;
+  store_state(m.state);
+  m.sigma.resize(zu(mesh_.n_cells));
+  m.q.resize(zu(mesh_.n_cells));
+  for (Index c = 0; c < mesh_.n_cells; ++c) {
+    const auto ci = zu(c);
+    m.sigma[ci] = macro::nsf_stress(mu_[ci], grad_[1][ci], grad_[2][ci], grad_[3][ci]);
+    const Vec3 q = -kappa_[ci] * grad_[4][ci];
+    m.q[ci] = {q.x, q.y, q.z};
+  }
+  return m;
 }
 
 HigherOrderTerms PbcSolver::last_hot() const {
