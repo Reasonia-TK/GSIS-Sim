@@ -1,6 +1,6 @@
 # 進捗ボード
 
-- 最終更新: 2026-10-18(本物の API の試験の通過を記録したとき)
+- 最終更新: 2026-10-18(フェーズ 8 を始めたとき)
 - 自動再開: 30 分ごとの定期ジョブは、自動で進める作業がなくなったので止めた(2026-10-18。GUI の作業のあいだだけ作り直し、終わって再び止めた)。次に長い作業を始めるときに作り直す
 - 用途: 作業の現状と次の手順。5 時間の利用上限で作業が止まった後は、このファイルから再開する(§4)。統括役(メインのエージェント)が更新する。
 
@@ -30,6 +30,7 @@
 |---|---|
 | C++/CUDA 基盤・1 次元参照解 | サブエージェントの完了通知。成果物は `docs/build.md`・`src/`・`tests/`、`verification/ref1d/README.md` |
 | DSMC 本計算 | `validation/dsmc/runs/<ケース>/run_initial.json` の `exit_code` と `elapsed_s`、`validation/dsmc/runs/<ケース>_console.log`。プロセス名は `dsmc-cuda` |
+| フェーズ 8 の Codex(S1・G1、2026-10-18 23 時台に起動) | 最終報告 `runs/phase8/prompts/s1_out.md`・`g1_out.md`、記録 `s1_log.txt`・`g1_log.txt`、報告書 `docs/phase8_s1_report.md`・`docs/phase8_g1_report.md`。依頼文は同じフォルダの `*_full.md`。プロセスは `codex.exe exec`。GPU のロックは `runs\.gpu_lock` |
 | Codex の修正 | `C:\Users\TK\AppData\Local\Temp\claude\C--Works-20261015-GSIS-PBC\ffa4a970-a40f-4fc4-831a-04e8b4421cbe\scratchpad\codex_dsmc\last_message.md`(最終報告)と同じ場所の `codex_exec.log`、`git -C C:\Works\20261003_DSMC status` と `log` |
 
 ## 3. 次にやること(上から順に)
@@ -54,6 +55,7 @@
 3k. (済、2026-10-18)ユーザーの判断を受けた追加: 既定のモデルを `claude-opus-5-5` に、OpenAI 形式に Responses API を追加(API の種類は自動 / Responses / Chat Completions。既定は `store: false`)、画面写真 01〜31(29〜31 は新規)。Python の試験 287 件通過・2 件 SKIP。コミットして `origin/main` に push(ユーザーの了承済み)。OpenAI 形式の既定のモデルは空のまま(一覧の取得か入力)、Responses の推論の要約は既定で頼まない(統括役の判断)
 3l. (済、2026-10-18)本物の API で AI モデリングを 1 回通す試験(`docs/gui.md`、`python/tests/test_gui_ai_live.py`)。ユーザーが自分の端末で流し、「api通ったみたい」と報告。Anthropic 形式と、OpenAI 形式の Responses API(`openai-responses`、公式の接続先、`store: false`)が通った。Chat Completions API(`openai-chat`)と互換サーバーは本物の API では未確認
 3m. (2026-10-18)Claude Code に Codex のプラグイン(`codex@openai-codex`)を入れた。Codex の本体は既存の `C:\Users\TK\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`(0.162.1)を使う(npm では入れない。ユーザーの指示)。起動したままの Claude Code では PATH にこの場所がなく、`/codex:setup` は ready: false(PATH に足すと ready: true、ログイン済み)。Claude Code を起動し直した後、`/codex:setup` が ready: true になることを確かめた。あわせて、引き継ぎのスキル `handover`(全プロジェクト共通、`C:\Users\TK\.claude\skills\handover\`)を作った。引き継ぎ書は `.handover/<日時>.md` に置き、git には入れない(`.git/info/exclude`)
+3n. (2026-10-18 開始)**フェーズ 8: 汎用の希薄気体シミュレーションアプリ**(設計 `docs/design_general_app.md`、担当 `CLAUDE.md`)。コードは Codex(gpt-6.1-sol、high)。G1・G2・G3a は完了(2026-10-19。報告書 `docs/phase8_g1_report.md`・`g2`・`g3a`、統括役が Python の試験をやり直して 366 件通過・2 件 SKIP)。S1(四面体の頑健性)は実行中。次は S2 → S3・S4(RAM への退避の検討)→ G3b(`check-case --json`・新しい境界条件・nsf・STOP・熱流量と力のキーの接続)。G3 は、ソルバーに頼らない G3a と、S2・S3 の後の G3b に分けた。気体のプリセット Ne・Ar・Kr・Xe は Bird (1994) 表 A1 の値を統括役が記憶から渡したもので、一次資料との照合が要る。Codex の起動は `codex exec --ignore-user-config -C C:/Works/20261015_GSIS-PBC -m gpt-6.1-sol -c model_reasoning_effort=high -s workspace-write -c approval_policy=never -c windows.sandbox=elevated -o <結果> - < <依頼文>`(ユーザーの設定を読むと、サンドボックスの準備が `node_repl.exe` の使用中で失敗する。この形はユーザーが許可の規則に足した)
 4. (済)Codex の修正結果の確認。コミットと push はユーザーの返事を待つ
 5. (済)DSMC `d10_q` の後処理。感度計算は見送り
 6. フェーズ 4(GSIS の結合)→ 5(管ケースの再現)→ 6(GUI)→ 7(AI モデリング用 MCP)

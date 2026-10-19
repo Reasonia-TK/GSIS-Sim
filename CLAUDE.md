@@ -62,7 +62,16 @@ arXiv:2610.07658v1 の GSIS-PBC(希薄気体の定常解法)を C++/CUDA で実�
 - 終わったら(失敗・中断しても)`runs\.gpu_lock` を消す
 - 小さな試験(VRAM 2 GB 未満)は順番待ちなしでよい
 
-### GUI への AI モデリングの組み込みの担当(2026-10-18 から)
+### フェーズ 8 の担当(2026-10-18 から。汎用アプリ化、`docs/design_general_app.md`)
+
+コードは Codex(`gpt-6.1-sol`、推論 high)が書く(ユーザーの指示)。統括役が依頼・確認・commit をする。C++ 側と Python 側を 1 本ずつ並行する。
+
+| 担当 | 編集してよい場所 | ビルド |
+|---|---|---|
+| S(ソルバー。S1 四面体 → S2 → S3 → S4) | C++ 全体、`verification/ref1d/`(S3)、`cases/general/`、`runs/phase8/`、`docs/design_bc_phase8.md`、`docs/design_host_offload.md`、`docs/phase8_s*_report.md`、`docs/build.md` | `build/phase8_s` |
+| G(GUI。G1 → G2 → G3) | `python/`、`docs/gui.md`、`docs/gui_screenshots/`、`docs/phase8_g*_report.md` | なし(Python のみ) |
+
+### GUI への AI モデリングの組み込みの担当(2026-10-18、完了)
 
 | 担当 | 編集してよい場所 |
 |---|---|
