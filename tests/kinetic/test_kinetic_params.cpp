@@ -46,6 +46,7 @@ TEST_CASE("kinetic params: defaults and values", "[kinetic]") {
   CHECK(d.pseudo_cfl == 0.0);
   CHECK(d.sweep_blocks == 0);  // 自動
   CHECK(d.precision == "fp32");
+  CHECK(d.boundary_iterations == 1);
 
   const KineticParams p = parse_kinetic_params(parse_case_toml(
       kBase + "\n[kinetic]\npseudo_cfl = 50\nsweep_blocks = 8\nprecision = \"fp64\"\nbackend = \"cpu\"\n"));
@@ -53,6 +54,8 @@ TEST_CASE("kinetic params: defaults and values", "[kinetic]") {
   CHECK(p.sweep_blocks == 8);
   CHECK(p.precision == "fp64");
   CHECK(p.backend == "cpu");
+  const auto bi = parse_kinetic_params(parse_case_toml(kBase + "\n[kinetic]\nboundary_iterations = 8\n"));
+  CHECK(bi.boundary_iterations == 8);
 
   const KineticParams q = parse_kinetic_params(parse_case_toml(
       kBase + "\n[kinetic]\nlimiter = \"none\"\nlimiter_eps = \"relative\"\ninitial_pressure = 0.5\n"
@@ -68,6 +71,10 @@ TEST_CASE("kinetic params: defaults and values", "[kinetic]") {
 }
 
 TEST_CASE("kinetic params: errors", "[kinetic]") {
+  for (const int n : {0, 1001}) {
+    CHECK_THROWS_WITH(parse_kinetic_params(parse_case_toml(kBase + "\n[kinetic]\nboundary_iterations = " + std::to_string(n))),
+                      ContainsSubstring("boundary_iterations"));
+  }
   CHECK_THROWS_WITH(parse_kinetic_params(parse_case_toml(kBase + "\n[kinetic]\nsweep_block = 8\n")),
                     ContainsSubstring("sweep_block"));
   CHECK_THROWS_WITH(parse_kinetic_params(parse_case_toml(kBase + "\n[kinetic]\nprecision = \"fp16\"\n")),

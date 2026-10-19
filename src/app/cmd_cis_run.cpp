@@ -404,6 +404,7 @@ int cmd_cis_run(std::span<const std::string> args) {
     p.set("initial_temperature", params.initial_temperature);
     p.set("convergence_u_floor", params.convergence_u_floor);
     p.set("wall_relaxation", params.wall_relaxation);
+    p.set("boundary_iterations", static_cast<std::int64_t>(params.boundary_iterations));
     p.set("interface_damping", params.interface_damping);
     // フェーズ 5a・5b の CIS の設定(フェーズ 5c で記録に足した)
     p.set("positivity_limiter", params.positivity_limiter);

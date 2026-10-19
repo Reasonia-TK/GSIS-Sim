@@ -396,6 +396,15 @@ struct KineticSolver::Impl {
     backend->boundary_sums(bsums);
     process_boundary_sums();
     backend->set_inflow(inflow);
+    // f とセルの目標分布を固定し、再構成に使う境界値と流入分布の遅れだけを解消する。
+    // 既定の1回では、上の従来の評価順をそのまま使う。
+    for (long long b = 1; b < s.params.boundary_iterations; ++b) {
+      update_pressure_inflow();
+      backend->set_inflow(inflow);
+      backend->boundary_sums(bsums);
+      process_boundary_sums();
+      backend->set_inflow(inflow);
+    }
     prepared_version = version;
     info.seconds = timer.seconds();
     return info;

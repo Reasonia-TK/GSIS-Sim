@@ -217,3 +217,22 @@ cmake --preset release -DFETCHCONTENT_SOURCE_DIR_TOMLPLUSPLUS=<toml++ のソー�
 - 警告 C4819 が大量に出る: `/utf-8` が効いていない。自前で CMake を呼ぶときも `cmake/GsisCompilerOptions.cmake` を通す。
 - GPU のカーネルが止まる(画面が一瞬消える): 表示用の GPU は WDDM の TDR(既定 2 秒)の対象。1 回のカーネルを 100 ms 未満にする(`gpu-info` の「カーネル時間の上限 TDR」)。
 - Linux / WSL2(任意、未確認): `cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release` で同じ CMakeLists を使える想定(プリセットは Windows 用)。
+
+## 9. フェーズ8 S担当のサンドボックスでの確認
+
+作業用の一時フォルダはリポジトリ内に置く。構成済みのビルド `build/phase8_s` を使用する。
+
+```powershell
+New-Item -ItemType Directory -Force build\tmp_s | Out-Null
+$env:TEMP = "$PWD\build\tmp_s"
+$env:TMP = $env:TEMP
+cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build\phase8_s'
+cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && ctest --test-dir build\phase8_s --output-on-failure'
+```
+
+`vswhere.exe` が見つからない旨の出力はこの環境では無害。実行中のexeはWindowsで上書きできないため、長時間の比較計算は `runs/phase8/s1/` に固定したexeをコピーして使う。
+S1の試験では、歪んだ四面体の全ての面の正値性(FP32/FP64)、`limiter="none"` との組合せ、GPU/CPU一致と決定性を追加した。固定fの境界反復の検証も含め、全155件。
+
+Pythonツールを呼ぶときは、このサンドボックスに限り `python\.venv\Scripts\python.exe` を直接使う。依存関係は変更しない。
+日本語のコードをPowerShellのパイプ経由でPythonに渡す場合は、先に `$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()` と `$env:PYTHONUTF8 = '1'` を設定する。
+計算の再現方法と結果は `docs/phase8_s1_report.md` を参照。

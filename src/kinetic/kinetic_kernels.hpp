@@ -116,7 +116,9 @@ GSIS_HD inline Vec3T<F> limited_gradient(const KineticView<F>& v, int cell, int 
     fmin = dmath::min(fmin, fk);
   }
   const Vec3T<F> g{gx, gy, gz};
-  if (v.limiter_mode == kLimiterNone) return g;
+  if (v.limiter_mode == kLimiterNone && v.positivity == 0) return g;
+  // 正値の制限は Venkatakrishnan の有無によらず使う。非正値のセルは再構成しない。
+  if (v.positivity != 0 && !(f_i > F(0))) return Vec3T<F>{};
   F eps2 = v.eps2[cell];
   if (v.limiter_mode == kLimiterVenkatRelative) {
     const F s = dmath::max(dmath::abs(fmax), dmath::abs(fmin));
@@ -128,7 +130,7 @@ GSIS_HD inline Vec3T<F> limited_gradient(const KineticView<F>& v, int cell, int 
     const CsrEntry<F>& c = v.csr[e];
     if (c.other < 0 && v.bfaces[c.bface].kind == kBcPeriodic) continue;
     const F proj = g.x * c.dsx + g.y * c.dsy + g.z * c.dsz;
-    acc.add(proj);
+    if (v.limiter_mode != kLimiterNone) acc.add(proj);
     proj_min = dmath::min(proj_min, proj);
   }
   F phi = acc.value();

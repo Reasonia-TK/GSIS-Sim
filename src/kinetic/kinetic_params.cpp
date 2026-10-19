@@ -26,6 +26,7 @@ KineticParams parse_kinetic_params(const CaseConfig& config) {
   p.initial_temperature = s.number("initial_temperature", p.initial_temperature);
   p.convergence_u_floor = s.number("convergence_u_floor", p.convergence_u_floor);
   p.wall_relaxation = s.number("wall_relaxation", p.wall_relaxation);
+  p.boundary_iterations = s.integer("boundary_iterations", p.boundary_iterations);
   p.interface_damping = s.number("interface_damping", p.interface_damping);
   p.gsis_negative_check = s.string("gsis_negative_check", p.gsis_negative_check);
   p.launch_cells = s.integer("launch_cells", p.launch_cells);
@@ -63,6 +64,8 @@ KineticParams parse_kinetic_params(const CaseConfig& config) {
   GSIS_CHECK(p.initial_temperature > 0.0, "kinetic.initial_temperature は正です");
   GSIS_CHECK(p.convergence_u_floor >= 0.0, "kinetic.convergence_u_floor は 0 以上です");
   GSIS_CHECK(p.wall_relaxation > 0.0 && p.wall_relaxation <= 1.0, "kinetic.wall_relaxation は (0, 1] です");
+  GSIS_CHECK(p.boundary_iterations >= 1 && p.boundary_iterations <= 1000,
+             "kinetic.boundary_iterations は 1〜1000 です");
   GSIS_CHECK(p.interface_damping >= 0.0, "kinetic.interface_damping は 0 以上です");
   GSIS_CHECK(p.gsis_negative_check == "all" || p.gsis_negative_check == "created" || p.gsis_negative_check == "limit" ||
                  p.gsis_negative_check == "blend",

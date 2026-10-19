@@ -11,8 +11,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
+#include "kinetic/kinetic_kernels.hpp"
 #include "kinetic/kinetic_setup.hpp"
 #include "kinetic/kinetic_solver.hpp"
 #include "kinetic_test_cases.hpp"
@@ -429,4 +431,143 @@ TEST_CASE("kinetic: the positivity limiter keeps the reconstructed boundary valu
   std::printf("右の真空の境界面の F⁺(質量): 制限なし %.4e、正値の制限 %.4e\n", flux[0], flux[1]);
   CHECK(flux[0] < 0.0);
   CHECK(flux[1] >= -1e-12 * std::abs(flux[0]));  // 面の値はちょうど 0 になりうる(丸め誤差)
+}
+
+
+namespace {
+
+template <class F>
+void check_tet_positive_reconstruction() {
+  // 歪んだ四面体に急な正値の分布を与え、全ての面中心(内部面を含む)を調べる。
+  const LoadedMesh lm = make_kinetic_box({4, 3, 3}, {0, 0, 0}, {4, 3, 3},
+                                         {"wall", "wall", "wall", "wall", "wall", "wall"}, 0.2, true);
+  KineticCaseOptions o;
+  o.kinetic = "backend = \"cpu\"\nsweep_blocks = 1\n";
+  const auto cfg = make_kinetic_case({{"wall", "diffuse_wall"}}, o);
+  const auto setup = kinetic::build_kinetic_setup(cfg, lm.mesh, lm.geometry, parse_kinetic_params(cfg));
+  const auto offsets = kinetic::make_csr_offsets(setup);
+  const auto entries = kinetic::make_csr_entries<F>(setup);
+  const auto bfaces = kinetic::make_bface_infos<F>(setup);
+  const auto eps2 = kinetic::make_eps2<F>(setup);
+  std::vector<F> f(static_cast<std::size_t>(setup.n_cells()));
+  for (std::size_t c = 0; c < f.size(); ++c) {
+    f[c] = static_cast<F>(1e-8 + std::exp(-8.0 * setup.geometry.cell_center[c].x));
+  }
+  kinetic::KineticView<F> v;
+  v.nv = 1;
+  v.f = f.data();
+  v.csr_offsets = offsets.data();
+  v.csr = entries.data();
+  v.bfaces = bfaces.data();
+  v.eps2 = eps2.data();
+  // 速度 0 は全境界で流出側(境界の最小二乗値はセル値)になり、流入の表は不要。
+  const Vec3T<F> xi{};
+  int negative_unlimited = 0;
+  for (const auto mode : {kinetic::kLimiterNone, kinetic::kLimiterVenkatAbsolute,
+                          kinetic::kLimiterVenkatRelative}) {
+    v.limiter_mode = mode;
+    for (int pos : {0, 1}) {
+      v.positivity = pos;
+      for (int c = 0; c < setup.n_cells(); ++c) {
+        const F fi = f[static_cast<std::size_t>(c)];
+        const auto g = kinetic::limited_gradient(v, c, 0, xi, fi);
+        for (int e = offsets[static_cast<std::size_t>(c)]; e < offsets[static_cast<std::size_t>(c) + 1]; ++e) {
+          const auto& face = entries[static_cast<std::size_t>(e)];
+          const F increment = g.x * face.dsx + g.y * face.dsy + g.z * face.dsz;
+          const F ff = fi + increment;
+          if (pos) {
+            // 勾配を丸めてから射影するための、精度に比例する許容幅。
+            const F tol = F(16) * std::numeric_limits<F>::epsilon() * fi;
+            CHECK(ff >= -tol);
+          } else if (mode == kinetic::kLimiterNone && ff < F(0)) {
+            ++negative_unlimited;
+          }
+        }
+      }
+    }
+  }
+  CHECK(negative_unlimited > 0);
+  v.positivity = 1;
+  for (const auto mode : {kinetic::kLimiterNone, kinetic::kLimiterVenkatRelative}) {
+    v.limiter_mode = mode;
+    for (F fi : {F(0), F(-1)}) {
+      f[0] = fi;
+      const auto g = kinetic::limited_gradient(v, 0, 0, xi, fi);
+      CHECK(g.x == F(0));
+      CHECK(g.y == F(0));
+      CHECK(g.z == F(0));
+    }
+  }
+}
+
+}  // namespace
+
+TEST_CASE("kinetic: positivity limits every face on skewed tetrahedra without a Venkat limiter", "[kinetic]") {
+  check_tet_positive_reconstruction<float>();
+  check_tet_positive_reconstruction<double>();
+}
+
+
+TEST_CASE("kinetic: boundary iterations solve the lag without changing the distribution", "[kinetic]") {
+  const LoadedMesh lm = make_kinetic_box({3, 2, 2}, {0, 0, 0}, {3, 2, 2},
+                                         {"inlet", "outlet", "wall", "wall", "wall", "wall"}, 0.2, true);
+  auto config = [](int iterations) {
+    KineticCaseOptions o;
+    o.nv = {10, 10, 10};
+    o.kinetic = "backend = \"cpu\"\nprecision = \"fp64\"\nsweep_blocks = 1\npositivity_limiter = true\n"
+                "boundary_iterations = " + std::to_string(iterations) + "\n";
+    return make_kinetic_case({{"inlet", "pressure_inlet"}, {"outlet", "vacuum"}, {"wall", "diffuse_wall"}}, o);
+  };
+  const auto c1 = config(1), c8 = config(8);
+  KineticSolver a(c1, lm.mesh, lm.geometry, parse_kinetic_params(c1));
+  KineticSolver b(c8, lm.mesh, lm.geometry, parse_kinetic_params(c8));
+  CellMacroState w;
+  w.resize(static_cast<std::size_t>(lm.mesh.n_cells));
+  for (std::size_t c = 0; c < w.size(); ++c) {
+    const auto& x = lm.geometry.cell_center[c];
+    w.rho[c] = 0.8 + 0.15 * x.x;
+    w.ux[c] = 0.05 + 0.03 * x.y;
+    w.uy[c] = 0.02 * x.z;
+    w.uz[c] = 0.0;
+    w.T[c] = 0.9 + 0.04 * x.z;
+    w.p[c] = w.rho[c] * w.T[c];
+  }
+  a.initialize_equilibrium(w);
+  b.initialize_equilibrium(w);
+  const auto f = a.distribution();
+  const auto first = a.boundary_fluxes();
+  const auto m = a.moments();
+  // 補正0はfを変えず、prepareのキャッシュだけを無効化する。従来の境界更新を8回行う。
+  BoundaryKineticFluxes repeated = first;
+  for (int i = 1; i < 8; ++i) {
+    a.apply_gsis_correction(m.state, m.state);
+    repeated = a.boundary_fluxes();
+  }
+  const auto batched = b.boundary_fluxes();
+  CHECK(a.distribution() == f);
+  CHECK(b.distribution() == f);
+  double changed = 0.0;
+  for (std::size_t face = 0; face < repeated.F_plus.size(); ++face) {
+    for (std::size_t k = 0; k < 5; ++k) {
+      CHECK(batched.F_plus[face][k] == Catch::Approx(repeated.F_plus[face][k]).margin(1e-12));
+      CHECK(batched.F_minus[face][k] == Catch::Approx(repeated.F_minus[face][k]).margin(1e-12));
+      changed = std::max(changed, std::abs(first.F_minus[face][k] - repeated.F_minus[face][k]));
+    }
+  }
+  CHECK(changed > 1e-6);
+  // さらに反復した値を基準に、固定fの境界更新が収束へ向かうことを調べる。
+  BoundaryKineticFluxes reference = repeated;
+  for (int i = 8; i < 64; ++i) {
+    a.apply_gsis_correction(m.state, m.state);
+    reference = a.boundary_fluxes();
+  }
+  double error1 = 0.0, error8 = 0.0;
+  for (std::size_t face = 0; face < reference.F_minus.size(); ++face) {
+    for (std::size_t k = 0; k < 5; ++k) {
+      error1 = std::max(error1, std::abs(first.F_minus[face][k] - reference.F_minus[face][k]));
+      error8 = std::max(error8, std::abs(batched.F_minus[face][k] - reference.F_minus[face][k]));
+    }
+  }
+  CHECK(error8 < 0.1 * error1);
+  CHECK(a.distribution() == f);
 }

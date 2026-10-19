@@ -721,6 +721,7 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
     p.set("initial_temperature", kp.initial_temperature);
     p.set("convergence_u_floor", kp.convergence_u_floor);
     p.set("wall_relaxation", kp.wall_relaxation);
+    p.set("boundary_iterations", static_cast<std::int64_t>(kp.boundary_iterations));
     p.set("interface_damping", kp.interface_damping);
     p.set("gsis_negative_check", kp.gsis_negative_check);
     p.set("positivity_limiter", kp.positivity_limiter);

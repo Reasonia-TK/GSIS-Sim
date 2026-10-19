@@ -1,0 +1,67 @@
+# 固定したfでの境界更新を8回反復する検証。
+
+[case]
+name = "full_d10_boundary8"
+mesh = "../../tube_vacuum/mesh/tube_tet.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(管半径)
+T0 = 273.15                         # K
+delta_rp = 10
+
+[[boundary]]
+patch = "inlet"
+type = "pressure_inlet"
+temperature = 273.15
+tangential_velocity = "zero"
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [30, 24, 24]
+range = [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5
+max_iterations = 200
+filter_length = 1.0
+mass_balance_tolerance = 2.0e-3
+
+[output]
+mass_flow_sections = "8, 10.5, 13, 15.5, 18"   # 管の X = x − 8 = 0, 2.5, 5, 7.5, 10(メッシュの x は上流槽の入口が 0)
+
+[kinetic]
+sweep_blocks = 0
+positivity_limiter = true
+boundary_iterations = 8
+pseudo_time = "velocity"
+pseudo_cfl = 5.0
+limiter_k = 3.0
+max_iterations = 4000
+
+[macro]
+advection = "upwind2"
+boundary_reconstruction = "limited"
+hot_interpolation = "face"
+gsis_face_state = "kinetic"
+gsis_freeze_kn = 1.0
+gsis_cfl_start = 0.0
+init_iterations = 50
+init_advection = "upwind1"

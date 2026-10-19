@@ -31,9 +31,9 @@ struct RunResult {
 };
 
 // 全種類の境界: x− 圧力入口、x+ 圧力出口、y の 2 面は動く拡散壁、z の 2 面は対称面
-RunResult run_mixed(const std::string& kinetic, int iterations, double distortion = 0.15) {
+RunResult run_mixed(const std::string& kinetic, int iterations, double distortion = 0.15, bool tetrahedra = false) {
   const LoadedMesh lm = make_kinetic_box({5, 3, 2}, {0, 0, 0}, {1, 0.6, 0.4},
-                                         {"inlet", "outlet", "wall", "wall", "sym", "sym"}, distortion);
+                                         {"inlet", "outlet", "wall", "wall", "sym", "sym"}, distortion, tetrahedra);
   KineticCaseOptions o;
   o.Kn = 0.1;
   o.kinetic = kinetic;
@@ -239,4 +239,19 @@ TEST_CASE("kinetic_gpu: GSIS correction on the GPU agrees with the CPU", "[kinet
   CHECK(g.first == c.first);
   CHECK(g.first >= 1);
   CHECK(max_rel(g.second, c.second) < 2e-5);
+}
+
+
+TEST_CASE("kinetic_gpu: positivity on skewed tetrahedra agrees with the CPU and is deterministic", "[kinetic_gpu]") {
+  if (gpu::device_count() == 0) SKIP("CUDA デバイスがありません");
+  // 面の向き・歪み・ブロック境界を含む四面体で、正値の制限の CPU/GPU 共通経路を検証する。
+  for (const std::string limiter : {"venkatakrishnan", "none"}) {
+    const std::string options = "sweep_blocks = 3\npositivity_limiter = true\nboundary_iterations = 4\nlimiter = \"" + limiter + "\"\n";
+    const RunResult g = run_mixed("backend = \"cuda\"\n" + options, 6, 0.2, true);
+    const RunResult c = run_mixed("backend = \"cpu\"\n" + options, 6, 0.2, true);
+    compare(g, c, 3e-5, 3e-5);
+    const RunResult g2 = run_mixed("backend = \"cuda\"\n" + options, 6, 0.2, true);
+    CHECK(same_bits(g.f, g2.f));
+    CHECK(same_bits(g.residual, g2.residual));
+  }
 }
