@@ -104,11 +104,16 @@ class FloatField(QLineEdit):
         self.setMinimumWidth(90)
 
     def setValue(self, v: float | None) -> None:
+        self._stored_value = v
+        self._display_text = "" if v is None else f"{float(v):.6g}"
         with QSignalBlocker(self):
-            self.setText("" if v is None else repr(float(v)))
+            self.setText(self._display_text)
         self._validate()
 
     def value(self) -> float | None:
+        # 表示を短くしても、未編集の入力を保存したときの精度は落とさない。
+        if self.text() == self._display_text:
+            return self._stored_value
         s = self.text().strip()
         if not s:
             return None
@@ -140,6 +145,8 @@ class FloatField(QLineEdit):
             repolish(self)
 
     def _on_text(self, _t: str) -> None:
+        self._stored_value = None
+        self._display_text = None
         self._validate()
         self.valueChanged.emit()
 

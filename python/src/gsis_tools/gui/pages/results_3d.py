@@ -90,7 +90,7 @@ class Vec3Field(QWidget):
 
     def setValue(self, v) -> None:
         for f, x in zip(self.fields, v):
-            f.setValue(round(float(x), 10))
+            f.setValue(float(x))
 
 
 def _other_cmap(cmap: str) -> str:
@@ -132,6 +132,8 @@ class View3DTab(QWidget):
         top.addWidget(QLabel("視点"))
         for key, label in (("iso", "斜め"), ("xy", "上から"), ("plane", "断面に垂直"), ("focus", "管の付近")):
             b = QPushButton(label)
+            if key == "focus":
+                self.focus_btn = b
             b.clicked.connect(lambda _c=False, k=key: self.view.set_view(k))
             top.addWidget(b)
         top.addStretch(1)
@@ -293,6 +295,41 @@ class View3DTab(QWidget):
     # ------------------------------------------------------------------ 状態
     def set_bundle(self, b: ResultBundle | None) -> None:
         self.bundle = b
+        tube = b is not None and b.run.is_tube_example
+        self.focus_btn.setVisible(tube)
+        self.nondim_check.setText("無次元で表示(p/p_in、u/√(2RT0)、T/T0 など)" if tube else
+                                 "基準量で無次元化(p/p_ref、u/√(2RT0)、T/T0 など)")
+        if b is not None:
+            self.view.clear()
+            self._applied_stream = None
+            with QSignalBlocker(self.stream_check):
+                self.stream_check.setChecked(False)
+        if b is not None and not tube and b.bounds is not None:
+            centre = [(b.bounds[2 * i] + b.bounds[2 * i + 1]) / (2 * b.length) for i in range(3)]
+            self.set_plane(centre, (0, 0, 1), preset="free", update=False)
+            size = [(b.bounds[2*i+1] - b.bounds[2*i]) / b.length for i in range(3)]
+            axis = int(np.argmax(size))
+            normal = [float(i == axis) for i in range(3)]
+            radius = max(min(v for v in size if v > 0) * .1, 1e-12)
+            self.seed_center.setValue(centre)
+            self.seed_normal.setValue(normal)
+            self.seed_radius.setValue(radius)
+            a, end = list(centre), list(centre)
+            a[(axis + 1) % 3] -= radius
+            end[(axis + 1) % 3] += radius
+            self.seed_a.setValue(a)
+            self.seed_b.setValue(end)
+        elif tube:
+            self.set_plane((0, 0, 0), (0, 0, 1), preset="z0", update=False)
+            defaults = StreamSpec()
+            self.seed_center.setValue(defaults.center)
+            self.seed_normal.setValue(defaults.normal)
+            self.seed_radius.setValue(defaults.radius)
+            self.seed_a.setValue(defaults.a)
+            self.seed_b.setValue(defaults.b)
+        for i, (key, (label, _, _)) in enumerate(PLANE_PRESETS.items()):
+            self.plane_preset.setItemText(i, label if tube else {"z0": "z = 0 (xy 面)", "y0": "y = 0 (xz 面)",
+                "x": "領域中央の x 一定面", "free": "自由(原点と法線を入力)"}[key])
         self._last = None
         self._scene_key = None
         with QSignalBlocker(self.field_combo):
@@ -356,6 +393,8 @@ class View3DTab(QWidget):
         _label, o, n = PLANE_PRESETS[key]
         if o is None:
             return  # 自由: 入力欄の値のまま
+        if key == "x" and self.bundle and not self.bundle.run.is_tube_example and self.bundle.bounds:
+            o = tuple((self.bundle.bounds[2*i] + self.bundle.bounds[2*i+1]) / (2*self.bundle.length) for i in range(3))
         self.set_plane(o, n, None)
 
     def _on_plane_edited(self) -> None:
@@ -574,7 +613,7 @@ class View3DTab(QWidget):
             items.append(SceneItem(res.line, color=t["accent"], line_width=4.0, lighting=False))
         L = self.bundle.length if self.bundle else 1.0
         parallel = req.mode in ("slice", "contour")
-        focus = tuple(v * L for v in TUBE_FOCUS)
+        focus = tuple(v * L for v in TUBE_FOCUS) if self.bundle.run.is_tube_example else self.bundle.bounds
         if parallel and res.slice is not None:
             # 断面の範囲と管の付近の箱の重なり(管を横切る断面なら管の断面に合わせて拡大する)
             sb = res.slice.bounds
@@ -582,7 +621,7 @@ class View3DTab(QWidget):
             hi = [min(sb[2 * i + 1], focus[2 * i + 1]) for i in range(3)]
             if all(h >= l for l, h in zip(lo, hi)):
                 focus = (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2])
-        view = self.view.scene().view if self.view.scene() else "focus"
+        view = self.view.scene().view if self.view.scene() else ("focus" if self.bundle.run.is_tube_example else "iso")
         key = (res.bundle_id, req.mode, req.plane.normal if parallel else None)
         spec: FieldSpec | None = self.field_combo.currentData()
         if spec is not None and spec.name != req.field:  # 場を変える前の要求の結果(説明は要求の場で書く)

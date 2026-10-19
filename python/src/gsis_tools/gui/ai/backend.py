@@ -420,6 +420,32 @@ class AiBackend:
             return False
         return self._start_op("model_save", self._manual("model_save", {"path": rel}))
 
+    def export_project_geometry(self) -> bool:
+        """G1 の形状画面へ渡す BREP と手順・会話を、同じ処理の中で保存する。"""
+        async def go() -> None:
+            session = await self._ensure_session()
+            base = self.workspace / GUI_DIR / "project_geometry"
+            base.mkdir(parents=True, exist_ok=True)
+            brep, state, conversation = base / "ai_source.brep", base / "ai_state.json", base / "ai_conversation.json"
+            for name, path in (("export", brep), ("model_save", state)):
+                result = await session.call(name, {"path": path.relative_to(self.workspace).as_posix()})
+                if result.is_error:
+                    raise ValueError(result.text)
+            self.save_conversation(conversation)
+            unit = self.surface.unit if self.surface is not None else "mm"
+            imports = {}
+            saved = json.loads(state.read_text(encoding="utf-8"))
+            for entry in saved.get("history", []):
+                if entry.get("tool") == "import_cad":
+                    rel = entry["args"]["path"]
+                    candidate = (self.workspace / rel).resolve()
+                    if not candidate.is_relative_to(self.workspace.resolve()):
+                        raise ValueError("AI の読み込んだ CAD が作業フォルダの外にあります")
+                    imports[rel] = str(candidate)
+            self._emit("project_geometry", {"path": str(brep), "state": str(state),
+                                             "conversation": str(conversation), "unit": unit, "imports": imports})
+        return self._start_op("export_project_geometry", go())
+
     def load_state(self, path: str | Path) -> bool:
         p = Path(path)
         rel = self._rel_in_workspace(p)

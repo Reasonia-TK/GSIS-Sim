@@ -94,7 +94,7 @@ def test_arbitrary_slice_and_contours(tmp_path):
         # 断面の値はセル値 p/p_ref(x の 1 次式)そのもの
         x = np.asarray(res.slice.cell_centers().points)[:, 0] / L
         assert np.max(np.abs(res.slice.cell_data[SHOW] - (1.0 - 0.04 * x))) < 0.04 * 0.5  # セルの幅 0.5 の中の差
-        assert res.label == "p / p_in"
+        assert res.label == "p / p_ref"
         if normal == (1.0, 0.0, 0.0):
             assert res.contours is None  # p は x だけの関数なので、x 一定の断面には等値線がない
         else:

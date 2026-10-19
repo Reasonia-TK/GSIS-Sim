@@ -88,6 +88,7 @@ class AiPage(QWidget):
 
     status = Signal(str)
     open_mesh = Signal(str)  # 書き出した .pmesh をメッシュの画面で開く
+    geometry_exported = Signal(object)  # G1 の共通の形状検査へ渡す
 
     def __init__(self, ctx: AppContext, parent: QWidget | None = None, view_backend: str | None = None,
                  resolver: KeyResolver | None = None):
@@ -697,6 +698,8 @@ class AiPage(QWidget):
             self._fill_tables()
             self._show_scene(keep_camera=self.view.scene() is not None)
             self._update_header()
+        elif kind == "project_geometry":
+            self.geometry_exported.emit(p)
         elif kind == "usage":
             self._show_usage(p.get("last") or {}, p.get("total") or {})
         elif kind == "note":

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import codecs
+import copy
 import math
 import shutil
 import time
@@ -30,6 +31,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QPlainTextEdit,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -43,6 +46,8 @@ from ..context import AppContext
 from ..history import HistoryTail, mass_balance, mass_flow_series
 from ..paths import display_path
 from ..reference import load_table1, table1_row
+from ..general_mesh import mesh_memory
+from ..project_runs import GpuLock, SUBCOMMANDS, next_run_directory, prepare_run, record_command, solver_repository
 from ..solver import (
     RUN_SUBCOMMANDS,
     SUBCOMMAND_LABELS,
@@ -62,6 +67,7 @@ class RunPage(QWidget):
     run_finished = Signal(str, int)  # 出力先、終了コード
     open_results = Signal(str)
     status = Signal(str)
+    busy_changed = Signal(bool)
 
     def __init__(self, ctx: AppContext, parent: QWidget | None = None):
         super().__init__(parent)
@@ -69,6 +75,10 @@ class RunPage(QWidget):
         self.ctx = ctx
         self.editor_case = None  # () -> (Path | None, bool 変更あり) を main window が入れる
         self.proc: QProcess | None = None
+        self.project = None
+        self._gpu_lock = None
+        self.gpu_lock_path = None  # 試験時だけ一時フォルダへ差し替える。
+        self._pending_launch = None
         self.tail: HistoryTail | None = None
         self.case_model: CaseModel | None = None
         self.derived: Derived | None = None
@@ -86,6 +96,9 @@ class RunPage(QWidget):
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self._poll)
+        self.wait_timer = QTimer(self)
+        self.wait_timer.setInterval(1000)
+        self.wait_timer.timeout.connect(self._try_waiting)
         self.gpu_timer = QTimer(self)
         self.gpu_timer.setInterval(5000)
         self.gpu_timer.timeout.connect(self._poll_gpu)
@@ -127,6 +140,10 @@ class RunPage(QWidget):
                                     start_dir=lambda: str(self.ctx.root / "cases"))
         self.from_editor_btn = QPushButton("ケース設定の画面のケースを使う")
         self.case_info = muted("")
+        self.lock_info = QPlainTextEdit()
+        self.lock_info.setReadOnly(True)
+        self.lock_info.setFixedHeight(130)
+        self.lock_info.setVisible(False)
         self.sub_combo = QComboBox()
         self.sub_note = StatusLabel("")
         self.refresh_btn = QPushButton("サブコマンドを読み直す")
@@ -136,6 +153,7 @@ class RunPage(QWidget):
         f.addRow("ケース", self.case_field)
         f.addRow("", self.from_editor_btn)
         f.addRow("", self.case_info)
+        f.addRow("", self.lock_info)
         sub_row = QHBoxLayout()
         sub_row.addWidget(self.sub_combo, 1)
         sub_row.addWidget(self.refresh_btn)
@@ -186,7 +204,7 @@ class RunPage(QWidget):
         grid.addWidget(self.cellscsv_check, 6, 0, 1, 2)
         grid.addWidget(QLabel("追加の引数"), 7, 0)
         grid.addWidget(self.extra_edit, 7, 1)
-        self.maxit_check.setChecked(True)
+        self.maxit_check.setChecked(False)
         lv.addWidget(g)
 
         g = QGroupBox("コマンド")
@@ -215,7 +233,11 @@ class RunPage(QWidget):
         f.addRow("GPU のメモリ(全体)", self.lab_gpu)
         lv.addWidget(g)
         lv.addStretch(1)
-        split.addWidget(left)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(left)
+        scroll.setMinimumWidth(570)
+        split.addWidget(scroll)
 
         # 右: グラフとログ
         right = QSplitter(Qt.Orientation.Vertical)
@@ -306,6 +328,21 @@ class RunPage(QWidget):
     # ------------------------------------------------------------------ ケース
     _out_is_default = True
 
+    @property
+    def busy(self):
+        return self.proc is not None or self._pending_launch is not None
+
+    def bind_project(self, project):
+        if self.busy:
+            return
+        self.project = project
+        self.sub_combo.setCurrentIndex(self.sub_combo.findData(SUBCOMMANDS[project.settings.mode]))
+        self.set_case(project.directory / "case.toml")
+        self._set_default_out()
+        self._update_buttons()
+        if project.settings.mode == "nsf":
+            self.state.set_status("warning", "NSF はソルバーの対応待ちです")
+
     def use_editor_case(self) -> None:
         if self.editor_case is None:
             return
@@ -346,7 +383,8 @@ class RunPage(QWidget):
         name = self.case_model.name if self.case_model else "case"
         sub = self.sub_combo.currentData() or "cis-run"
         self.out_field.blockSignals(True)
-        self.out_field.setText(str(default_out_dir(sub, name, self.ctx.root)))
+        out = next_run_directory(self.project) if self.project is not None else default_out_dir(sub, name, self.ctx.root)
+        self.out_field.setText(str(out))
         self.out_field.blockSignals(False)
         self._out_is_default = True
         self._update_command()
@@ -384,7 +422,7 @@ class RunPage(QWidget):
         self.cmd_note.setText(" / ".join(notes) or f"作業ディレクトリ: {self.ctx.root}")
 
     def _update_buttons(self) -> None:
-        running = self.proc is not None
+        running = self.busy
         sub = self.sub_combo.currentData()
         self.run_btn.setEnabled(not running and self.ctx.solver_ok() and self.case_model is not None)
         self.stop_btn.setEnabled(running)
@@ -392,7 +430,12 @@ class RunPage(QWidget):
         self.results_btn.setEnabled(self._out_dir is not None and (self._out_dir / "summary.json").is_file())
         for w in (self.case_field, self.from_editor_btn, self.sub_combo, self.refresh_btn, self.out_field,
                   self.out_default_btn):
-            w.setEnabled(not running)
+            w.setEnabled(not running and self.project is None)
+        for w in (self.maxit_check, self.maxit_spin, self.tol_check, self.tol_field, self.backend_combo,
+                  self.precision_combo, self.print_check, self.print_spin, self.novtu_check,
+                  self.cellscsv_check, self.extra_edit):
+            if running:
+                w.setEnabled(False)
         if running:
             self.run_btn.setToolTip("実行中")
         elif sub and not self.available(sub):
@@ -406,7 +449,10 @@ class RunPage(QWidget):
         types = {b.patch: b.type for b in self.case_model.boundaries} if self.case_model else None
         refs = []
         case_dir = Path(self.case_field.text()).parent if self.case_field.text() else None
-        if d is not None and d.has_p_in and casefile.is_tube_case(self.case_model, case_dir):
+        tube = (self.project.geometry.get("example") == "tube_vacuum" if self.project is not None else
+                self.case_model is not None and casefile.is_tube_case(self.case_model, case_dir))
+        convert = d is not None and (tube or d.has_p_in)
+        if d is not None and tube:
             if self._table1 is None:
                 try:
                     self._table1 = load_table1()
@@ -421,19 +467,67 @@ class RunPage(QWidget):
         tol = None
         if self.proc is None and getattr(self, "_attached_tolerance", None):
             tol = self._attached_tolerance  # 出力フォルダを追うときは、その計算の収束判定
+        elif getattr(self, "_active_tolerance", None) is not None:
+            tol = self._active_tolerance
         elif self.tol_check.isChecked() and self.tol_check.isEnabled():
             tol = self.tol_field.value()
         elif self.case_model is not None:
             tol = float(self.case_model.gsis_value("tolerance")) if (self._current_sub or "") != "pbc-run" else None
         self.plot.set_context(
-            nd_to_Mdot=d.nd_to_Mdot if d is not None and d.has_p_in else None,
-            mass_flow_scale=d.mass_flow_scale if d is not None and d.has_p_in else None,
+            nd_to_Mdot=d.nd_to_Mdot if convert else None,
+            mass_flow_scale=d.mass_flow_scale if convert else None,
             patch_types=types, tolerance=tol, reference_mdot=refs,
         )
 
     def start(self) -> bool:
-        if self.proc is not None:
+        if self.busy:
             return False
+        if self.project is not None:
+            try:
+                p = self.project
+                reason = p.blocked_reason("run")
+                if reason:
+                    raise ValueError(reason)
+                if p.settings.mode == "nsf":
+                    raise ValueError("NSF はソルバーの対応待ちです")
+                if not self.ctx.solver_ok() or not self.available(SUBCOMMANDS[p.settings.mode]):
+                    raise ValueError("指定したモードを実行できるソルバーを選んでください")
+                self.sub_combo.setCurrentIndex(self.sub_combo.findData(SUBCOMMANDS[p.settings.mode]))
+                if "--out" not in (self._flags(SUBCOMMANDS[p.settings.mode]) or set()):
+                    raise ValueError("このソルバーはプロジェクトの出力先 --out に対応していません")
+                # 管理する引数は追加欄から上書きさせない。
+                from ..solver import split_extra_args
+                extra = split_extra_args(self.extra_edit.text())
+                forbidden = ("--out", "--backend", "--precision")
+                if any(a.split("=", 1)[0] in forbidden or a == "--set" for a in extra):
+                    raise ValueError("出力先・実行先・精度は専用欄で指定してください。プロジェクトでは --set は使えません")
+                self._set_default_out()
+                out = Path(self.out_field.text())
+                snapshot = prepare_run(copy.deepcopy(p), out)
+                self.case_model = casefile.load_case(snapshot).model
+                self.derived = casefile.derive(self.case_model)
+                cmd, skipped = self.command()
+                cmd[2] = str(snapshot)
+                record_command(out, cmd)
+                self._pending_launch = (cmd, SUBCOMMANDS[p.settings.mode], out)
+                backend = self.options().backend or p.settings.kinetic.get("backend", "cuda")
+                memory = mesh_memory(p, p.mesh["cells"])
+                if self.options().precision == "fp64" or (self.options().precision is None and
+                                                          p.settings.kinetic.get("precision") == "fp64"):
+                    memory = dict(memory, total=2 * memory["total"])
+                if backend != "cpu" and memory["total"] > memory["budget"]:
+                    raise ValueError("指定した精度では VRAM の予算を超えます。FP32 または小さい格子にしてください")
+                if backend != "cpu" and memory["total"] >= 2_000_000_000:
+                    path = self.gpu_lock_path or (solver_repository(self.ctx.solver_path(), self.ctx.root) / "runs/.gpu_lock")
+                    self._gpu_lock = GpuLock(path, f"G: {p.name} / {out}")
+                self.busy_changed.emit(True)
+                self._update_buttons()
+                self._try_waiting()
+                return self.busy
+            except (OSError, ValueError, KeyError) as exc:
+                self.state.set_status("warning", str(exc))
+                self._cleanup()
+                return False
         sub = self.sub_combo.currentData()
         if not self.ctx.solver_ok():
             QMessageBox.warning(self, "ソルバーがありません", f"ソルバーが見つかりません:\n{self.ctx.solver_path()}")
@@ -457,6 +551,28 @@ class RunPage(QWidget):
                 return False
         return self._launch(cmd, sub, out)
 
+    def _try_waiting(self):
+        if self._pending_launch is None:
+            return
+        try:
+            if self._gpu_lock is not None and not self._gpu_lock.acquired and not self._gpu_lock.try_acquire():
+                self.state.set_status("warning", "GPU の順番待ちです。停止で取り消せます")
+                self.lock_info.setPlainText(f"先行計算: {self._gpu_lock.owner_summary()}\n"
+                    f"ロック: {self._gpu_lock.path}\n{self._gpu_lock.owner_text()}\n"
+                    "残存ロックは自動削除しません。異常終了した場合は所有者と計算の終了を確認してください。")
+                self.lock_info.setVisible(True)
+                self.wait_timer.start()
+                return
+            cmd, sub, out = self._pending_launch
+            self.wait_timer.stop()
+            self._pending_launch = None
+            self.lock_info.clear()
+            self.lock_info.setVisible(False)
+            self._launch(cmd, sub, out)
+        except (OSError, ValueError) as exc:
+            self.state.set_status("error", f"実行を開始できません: {exc}")
+            self._cleanup()
+
     def _expected_out_dir(self, cmd: list[str]) -> Path | None:
         if "--out" in cmd:
             p = Path(cmd[cmd.index("--out") + 1])
@@ -470,6 +586,10 @@ class RunPage(QWidget):
         self._out_dir = out
         self._t_start = time.time()
         self._stop_requested = False
+        self._active_tolerance = None
+        for flag in ("--tol", "--tolerance"):
+            if flag in cmd:
+                self._active_tolerance = float(cmd[cmd.index(flag) + 1])
         self.log.clear_log()
         self.log.append_lines("$ " + " ".join(cmd), stream="gui")
         self.tail = HistoryTail(out / "history.csv", min_mtime=self._t_start - 2.0) if out else None
@@ -484,6 +604,7 @@ class RunPage(QWidget):
         proc.readyReadStandardError.connect(lambda: self._read(proc, "err"))
         proc.finished.connect(self._finished)
         proc.errorOccurred.connect(self._error)
+        proc.started.connect(self._process_started)
         self.proc = proc
         proc.start(cmd[0], cmd[1:])
         self.state.set_status("info", f"{sub} を実行しています…")
@@ -494,6 +615,13 @@ class RunPage(QWidget):
         self._update_buttons()
         self.status.emit(f"{sub} を起動しました(出力先 {display_path(out, self.ctx.root) if out else '既定'})")
         return True
+
+    def _process_started(self):
+        if self._gpu_lock is not None:
+            try:
+                self._gpu_lock.set_solver_pid(int(self.proc.processId()))
+            except OSError as exc:
+                self.log.append_lines(f"ロックの PID を追記できません: {exc}", kind="error")
 
     def _read(self, proc: QProcess, stream: str) -> None:
         data = bytes(proc.readAllStandardOutput() if stream == "out" else proc.readAllStandardError())
@@ -539,12 +667,29 @@ class RunPage(QWidget):
         return f"。{it} 反復で" + ("収束" if conv else "上限に達した(収束していない)") if conv is not None else ""
 
     def _cleanup(self) -> None:
+        self.wait_timer.stop()
+        self._pending_launch = None
+        self.lock_info.setVisible(False)
         self.timer.stop()
         self.gpu_timer.stop()
+        if self.proc is not None:
+            self.proc.deleteLater()
         self.proc = None
+        self.extra_edit.setEnabled(True)
+        if self._gpu_lock is not None:
+            if self._gpu_lock.acquired and not self._gpu_lock.release():
+                self.log.append_lines(f"所有情報または内容が変わったためロックを保持しました: {self._gpu_lock.path}", kind="error")
+            self._gpu_lock = None
+        self.busy_changed.emit(False)
+        self._on_sub_changed()
         self._update_buttons()
 
     def stop(self) -> None:
+        if self._pending_launch is not None:
+            self._cleanup()
+            self.state.set_status("warning", "GPU の順番待ちを取り消しました")
+            self.lock_info.clear()
+            return
         if self.proc is None:
             return
         self._stop_requested = True
@@ -560,6 +705,9 @@ class RunPage(QWidget):
         self.attach_dir(out)
 
     def attach_dir(self, out: Path) -> None:
+        if self.busy:
+            return
+        self._active_tolerance = None
         self._out_dir = Path(out)
         self._current_sub = None
         self._attached_tolerance = None
@@ -619,8 +767,9 @@ class RunPage(QWidget):
             ups = [u for u in ups if math.isfinite(u)]
             self.lab_eps.setText(f"更新量 max = {max(ups):.3e}" if ups else "—")
         d = self.derived
-        series, _ = mass_flow_series(h, nd_to_Mdot=d.nd_to_Mdot if d and d.has_p_in else None,
-                                     mass_flow_scale=d.mass_flow_scale if d and d.has_p_in else None,
+        convert = d and (d.has_p_in or self.project is not None and self.project.geometry.get("example") == "tube_vacuum")
+        series, _ = mass_flow_series(h, nd_to_Mdot=d.nd_to_Mdot if convert else None,
+                                     mass_flow_scale=d.mass_flow_scale if convert else None,
                                      patch_types={b.patch: b.type for b in self.case_model.boundaries}
                                      if self.case_model else None)
         parts = [f"{s.label} {s.y[-1]:.5g}" for s in series
@@ -628,7 +777,7 @@ class RunPage(QWidget):
         mb = mass_balance(series)
         if math.isfinite(mb):
             parts.append(f"差 {mb:.1e}")
-        self.lab_mdot.setText(("Ṁ: " if d and d.has_p_in else "") + "、".join(parts) if parts else "—")
+        self.lab_mdot.setText(("Ṁ: " if convert else "") + "、".join(parts) if parts else "—")
         el = h.elapsed_seconds()
         per = None
         for c in ("time_iter_s", "seconds"):
@@ -654,6 +803,7 @@ class RunPage(QWidget):
     def _gpu_done(self, proc: QProcess) -> None:
         text = bytes(proc.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
         self._gpu_proc = None
+        proc.deleteLater()
         try:
             used, total = (float(x) for x in text.splitlines()[0].split(","))
             self.lab_gpu.setText(f"{used:,.0f} / {total:,.0f} MiB(GPU 全体。ほかのプログラムの分を含む)")
@@ -665,6 +815,18 @@ class RunPage(QWidget):
         self.plot.restyle(scheme)
 
     def shutdown(self) -> None:
+        if self._gpu_proc is not None:
+            proc = self._gpu_proc
+            proc.finished.disconnect()
+            proc.kill()
+            proc.waitForFinished(3000)
+            proc.deleteLater()
+            self._gpu_proc = None
         if self.proc is not None:
             self.proc.kill()
             self.proc.waitForFinished(3000)
+        if self.proc is None:
+            self._cleanup()
+        self.timer.stop()
+        self.gpu_timer.stop()
+        self.wait_timer.stop()

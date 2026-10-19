@@ -109,9 +109,10 @@ def send_and_wait(app, page, text: str, timeout: float = 240.0) -> str:
 
 def test_page_in_window(gui):
     app, ctx, win, page, kr, d = gui
-    assert [win.nav.item(i).data(0x0100) for i in range(win.nav.count())] == ["case", "mesh", "ai", "run", "results"]
+    assert [win.nav.item(i).data(0x0100) for i in range(win.nav.count())] == ["geometry", "settings", "boundaries", "mesh", "run", "results"]
     win.show_page("ai")
-    assert win.stack.currentWidget() is page
+    assert win.stack.currentWidget() is win.geometry_page
+    assert win.geometry_page.tabs.currentIndex() == 1
     assert wait_until(app, lambda: page.server_state == "ready", 120)
     assert page.workspace == d / "ws"
     assert page.tool_combo.count() == 31 and page.tool_combo.findText("gui_surface") < 0  # GUI 専用は出さない
@@ -144,15 +145,20 @@ def test_tube_from_chat_with_mock_ai(gui):
     assert "四面体" in scene.caption
     # トークン数(料金は出さない)
     assert "入力" in page.tokens_label.text() and "出力" in page.tokens_label.text() and "$" not in page.tokens_label.text()
-    # 書き出したメッシュをメッシュの画面で開く
+    # AI の書き出しは保持し、共通の形状検査と境界・メッシュの画面へ引き継ぐ。
     assert page.last_pmesh and Path(page.last_pmesh).is_file()
     link = next(w for w in page.chat.items() if hasattr(w, "open_button"))
     link.open_button.click()
-    mp = win.mesh_page
-    assert wait_until(app, lambda: mp.preview is not None and mp.preview.path is not None
-                      and Path(mp.preview.path) == Path(page.last_pmesh), 120)
-    assert win.stack.currentWidget() is mp
-    assert sorted(p.name for p in mp.preview.mesh.patches) == ["inlet", "outlet", "wall"]
+    assert "境界条件を確定" in win.statusBar().currentMessage()
+    win.geometry_page.adopt_btn.click()
+    assert wait_until(app, lambda: win.project.geometry.get("source_kind") == "ai"
+                      and not win.geometry_page.busy and not page.busy, 120)
+    assert win.project.stages["geometry"] == "done"
+    assert win.project.asset(win.project.geometry["ai_state"]).is_file()
+    assert win.project.asset(win.project.geometry["ai_conversation"]).is_file()
+    for key in ("ai_state", "ai_conversation"):
+        assert KEY not in win.project.asset(win.project.geometry[key]).read_text(encoding="utf-8")
+    win.project.dirty = False  # この試験の出力は一時フォルダだけに残す。
     win.show_page("ai")
 
 

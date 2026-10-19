@@ -292,7 +292,7 @@ class HistoryTail:
 # 質量流量の系列
 # ---------------------------------------------------------------------------
 
-INFLOW_TYPES = ("pressure_inlet",)
+INFLOW_TYPES = ("pressure_inlet", "mass_flow_inlet")
 OUTFLOW_TYPES = ("pressure_outlet", "vacuum")
 
 

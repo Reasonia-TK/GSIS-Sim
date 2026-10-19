@@ -69,6 +69,7 @@ KNOWN_MODULE_KEYS: dict[str, dict[str, tuple[str, Any, str]]] = {
         "interface_damping": ("float", 0.5, "LU-SGS のブロック境界の安定化の係数"),
         "launch_cells": ("int", 16384, "1 回のカーネル起動で扱うセル数の上限"),
         "sweep_cells_per_launch": ("int", 4096, "LU-SGS の 1 回の起動で各ブロックが進むセル数の上限"),
+        "gsis_negative_check": ("str", "blend", "GSIS 補正の負値の判定(blend / created)"),
     },
     "macro": {
         "advection": ("str", "upwind1", "移流項(upwind1 / upwind2)"),
@@ -80,6 +81,9 @@ KNOWN_MODULE_KEYS: dict[str, dict[str, tuple[str, Any, str]]] = {
         "pbc_tolerance": ("float", 1e-6, "PBC 内側の収束判定 ‖ΔW‖/‖W‖"),
         "relaxation": ("float", 1.0, "更新の緩和係数"),
         "init_iterations": ("int", 50, "NSF のみの初期化での PBC 反復数"),
+        "init_advection": ("str", "upwind1", "NSF 初期化の移流項(upwind1 / upwind2)"),
+        "hot_interpolation": ("str", "face", "高次項の補間(face / cell)"),
+        "gsis_freeze_kn": ("float", 0.0, "これより局所 Kn が大きいセルの PBC 更新を固定(0 で無効)"),
         "limiter_k": ("float", 5.0, "再構成の Venkatakrishnan の定数 K"),
         "lsq_weight_power": ("float", 0.0, "最小二乗勾配の重み |r|^-p の p"),
         "max_relative_decrease": ("float", 0.5, "1 回の更新で p・T を下げてよい割合の上限"),

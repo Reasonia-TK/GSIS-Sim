@@ -64,6 +64,7 @@ def gui(tmp_path_factory):
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
     QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
     yield app, ctx, win
+    win.project.dirty = False
     win.close()  # 確認の窓は差し替えたまま閉じる(offscreen で窓が出ると止まる)
     app.processEvents()
     QMessageBox.question, QMessageBox.warning, QMessageBox.information = saved
@@ -94,68 +95,12 @@ def test_theme_tokens_in_stylesheet(gui):
     assert "mode=light" in text
 
 
-def test_window_has_five_pages(gui):
-    app, ctx, win = gui
-    assert win.nav.count() == 5 and win.stack.count() == 5  # モデリング(AI)を足した(2026-10-18)
-    for i, key in enumerate(("case", "mesh", "ai", "run", "results")):
-        win.show_page(key)
-        app.processEvents()
-        assert win.stack.currentIndex() == i
 
 
-def test_case_page_roundtrip_through_form(gui, tmp_path):
-    app, ctx, win = gui
-    page = win.case_page
-    src = ROOT / "cases/tube_vacuum/kinetic/tube_delta1_cis.toml"
-    assert page.load_file(src)
-    loaded = casefile.load_case(src).model
-    assert page.collect_model() == loaded  # 入力欄に入れて取り出すと同じ値
-    assert not page.is_dirty()
-    target = tmp_path / "sub" / "copy.toml"
-    page.save(path=target, check=False)
-    again = casefile.load_case(target).model
-    # メッシュのパスは新しい場所からの相対パスに直る(指す先は同じ)
-    assert casefile.resolve_mesh(again.mesh, target.parent) == casefile.resolve_mesh(loaded.mesh, src.parent)
-    again.mesh = loaded.mesh
-    assert again == loaded
-    text = target.read_text(encoding="utf-8")
-    assert "# kg (He)" in text  # 元のコメントを保つ
-    # 値を変えて保存
-    page.ref_value.setText("10.0")  # 入力したのと同じ(シグナルが出る)
-    page.ncis_spin.setValue(7)
-    assert page.is_dirty()
-    page.save(path=target, check=False)
-    m = casefile.load_case(target).model
-    assert m.ref_value == 10.0 and m.gsis["n_cis"] == 7 and "max_pbc" not in m.gsis
 
 
-def test_case_page_preset(gui):
-    app, ctx, win = gui
-    page = win.case_page
-    page.apply_preset(1000.0, "gsis")
-    m = page.collect_model()
-    assert m.name == "tube_delta1000" and m.ref_value == 1000.0 and m.mode == "gsis"
-    assert set(m.gsis) == {"n_cis", "max_pbc", "cfl_pbc", "tolerance"}
-    assert page.current_path() is None and page.is_dirty()
-    rows = {page.derived_table.item(r, 0).text(): page.derived_table.item(r, 1).text()
-            for r in range(page.derived_table.rowCount())}
-    assert rows["δ = √π/(2 Kn)"].startswith("1000")
 
 
-@pytest.mark.skipif(not HAS_SOLVER, reason="gsis-solver がビルドされていない")
-def test_case_page_check_case(gui):
-    app, ctx, win = gui
-    page = win.case_page
-    assert page.load_file(ROOT / "cases/smoke/smoke.toml")
-    assert page.run_check()
-    assert wait_until(app, lambda: page._proc is None, 60)
-    assert "問題なし" in page.check_status.text()
-    assert "p_in" in page.check_log.text_all()
-    # メッシュにないパッチ → ソルバーがエラーにする
-    page.boundary_table.table.item(2, 0).setText("no_such_patch")
-    assert page.run_check()
-    assert wait_until(app, lambda: page._proc is None, 60)
-    assert "終了コード 1" in page.check_status.text()
 
 
 def test_run_page_command_and_missing_subcommand(gui, tmp_path):
@@ -224,49 +169,8 @@ def test_run_page_stop(gui, tmp_path):
     rp.backend_combo.setCurrentIndex(0)
 
 
-def test_mesh_page_tet_in_thread(gui):
-    """四面体(gmsh)も画面から別スレッドで作れる(gmsh はメインスレッドで先に初期化する)。"""
-    from gsis_tools.gui.meshgen import TubeMeshSpec
-
-    app, ctx, win = gui
-    mp = win.mesh_page
-    mp.set_spec(TubeMeshSpec(kind="tet", target_cells=None, tet_h_max=1.2, tet_h_tube=0.35, gradient=0.3, threads=4))
-    assert mp.tet_box.isVisible() or mp.kind_combo.currentData() == "tet"
-    assert mp.generate()
-    assert wait_until(app, lambda: not mp._busy, 180)
-    assert mp.preview is not None, mp.state_label.text()
-    assert list(mp.preview.report.cell_types) == ["tetrahedron"]
-    assert mp.preview.report.check_ok and mp.preview.report.n_cells > 500
 
 
-def test_mesh_page_generates_and_saves(gui, tmp_path):
-    from gsis_tools.gui.meshgen import TubeMeshSpec
-    from gsis_tools.pmesh import read_pmesh
-
-    app, ctx, win = gui
-    mp = win.mesh_page
-    spec = TubeMeshSpec(kind="hex", target_cells=None, n_theta=4, ds_wall=0.15, ds_mouth=0.15, h_tube=0.8,
-                        h_max=1.5)
-    mp.set_spec(spec)
-    assert mp.spec().n_theta == 4 and mp.spec().target_cells is None
-    assert "--n-theta 4" in mp.cli_edit.text()
-    assert mp.generate()
-    assert wait_until(app, lambda: not mp._busy, 120)
-    assert mp.preview is not None, mp.state_label.text()
-    n = mp.preview.report.n_cells
-    assert n > 100 and mp.preview.report.check_ok
-    assert mp.quality_table.rowCount() >= 10 and mp.patch_table.rowCount() == 3
-    assert mp.view.scene() is not None and len(mp.view.scene().items) == 1
-    assert [name for name, _ in mp.view.scene().legend] == ["inlet", "outlet", "wall", "断面"]
-    mp.rb_boundary.setChecked(True)
-    app.processEvents()
-    assert mp.view.scene().legend[-1][0] == "wall"
-    out = tmp_path / "small.pmesh"
-    assert mp.save_mesh(out)
-    assert wait_until(app, lambda: not mp._busy, 60)
-    assert out.is_file() and (tmp_path / "small_quality.md").is_file()
-    assert read_pmesh(out).n_cells == n
-    assert mp.use_btn.isEnabled()
 
 
 def _synthetic_run(tmp_path: Path) -> Path:
@@ -298,6 +202,7 @@ def _synthetic_run(tmp_path: Path) -> Path:
         "mass_flow": {"scale_kg_s": d.mass_flow_scale, "M_dot_inlet": 0.329, "M_dot_outlet": 0.331, "M_dot": 0.330},
     }
     (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    (run / "gui_run.json").write_text(json.dumps({"example": "tube_vacuum"}), encoding="utf-8")
     hdr = "iteration,epsilon,eps_rho,eps_u,eps_T,residual,residual_rel,mdot_xmin_nd,mdot_xmax_nd,mdot_wall_nd,time_iter_s,time_total_s"
     rows = [f"{i},{10.0 ** -i},0,0,0,0,0,{-0.41},{0.415},0,0.1,{0.1 * i}" for i in range(1, 13)]
     (run / "history.csv").write_text(hdr + "\n" + "\n".join(rows) + "\n", encoding="utf-8")

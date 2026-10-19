@@ -134,6 +134,19 @@ class LineProfileTab(QWidget):
     def set_bundle(self, b: ResultBundle | None) -> None:
         self.bundle = b
         self.profile = None
+        tube = b is not None and b.run.is_tube_example
+        for i in range(self.preset.count()):
+            self.preset.model().item(i).setEnabled(tube or self.preset.itemData(i) == "free")
+        self.xaxis.model().item(self.xaxis.findData("X")).setEnabled(tube)
+        if b is not None and not tube and b.bounds is not None:
+            bounds = np.asarray(b.bounds).reshape(3, 2) / b.length
+            centre = bounds.mean(axis=1)
+            axis = int(np.argmax(bounds[:, 1] - bounds[:, 0]))
+            a, end = centre.copy(), centre.copy()
+            a[axis], end[axis] = bounds[axis]
+            self.set_points(a, end, compute=False)
+            if self.xaxis.currentData() == "X":
+                self.xaxis.setCurrentIndex(0)
         # 前の選択を引き継ぐ(cis-run の u と pbc-run の U は同じものとみなす)
         prev = {_canon(k) for k in self.selected_keys()}
         with QSignalBlocker(self.qty_list):
@@ -249,6 +262,8 @@ class LineProfileTab(QWidget):
         scales = self.bundle.run.scales if self.bundle else None
         for i, (ax, k) in enumerate(zip(axes, keys)):
             f, label = profile_scale(k, scales, self.nondim_check.isChecked())
+            if self.bundle and not self.bundle.run.is_tube_example:
+                label = label.replace("p_in", "p_ref").replace("ρ_in", "ρ_ref")
             y = prof.values[k] * f
             ax.plot(x, y, color=colors[i % len(colors)], linewidth=1.6)
             ax.set_ylabel(label)
@@ -286,7 +301,8 @@ class LineProfileTab(QWidget):
 
     def export_csv(self, path) -> object:
         return write_profile_csv(path, self.profile, self.bundle.run.scales if self.bundle else None,
-                                 self.nondim_check.isChecked())
+                                 self.nondim_check.isChecked(),
+                                 inlet_reference=self.bundle is not None and self.bundle.run.is_tube_example)
 
 
 __all__ = ["LineProfileTab", "profile_keys"]

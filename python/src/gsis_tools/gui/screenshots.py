@@ -1,302 +1,195 @@
-"""画面の確認用のスクリーンショットを作る(docs/gui_screenshots/)。
+"""G1・G2 の画面写真を作る。CAD は一時フォルダで作り、API・ソルバーは起動しない。
 
-    uv run --project python --extra gui python -m gsis_tools.gui.screenshots [--out docs/gui_screenshots]
-                                                                            [--interactive] [--size 1600x980]
+    python -m gsis_tools.gui.screenshots [--out docs/gui_screenshots] [--size 1600x980]
 
-- 既定は Qt の offscreen プラットフォームで、画面を出さずに撮る(3D は静止画の方式)
-- ``--interactive`` は通常の表示(Windows)で窓を出して撮る(3D は pyvistaqt の QtInteractor)
-- データは ``runs/`` の既存の出力を読むだけ。短い実行(smoke ケース、CPU)の出力は一時フォルダに書く
+01–31・39 は旧画面の記録として保持し、32–43 と G2 の 44–50 を生成する。
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="gsis-gui のスクリーンショットを作る")
-    ap.add_argument("--out", default=None, help="書き出すフォルダ(既定 docs/gui_screenshots)")
-    ap.add_argument("--interactive", action="store_true", help="通常の表示で窓を出して撮る")
-    ap.add_argument("--size", default="1600x980", help="窓の大きさ(既定 1600x980)")
-    ap.add_argument("--only", default="", help="撮る画像の名前の一部(カンマ区切り。確認用)")
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="G1・G2 の形状・設定・境界・メッシュの画面写真")
+    ap.add_argument("--out", default="docs/gui_screenshots")
+    ap.add_argument("--size", default="1600x980")
+    ap.add_argument("--only", default="")
+    ap.add_argument("--interactive", action="store_true")
     args = ap.parse_args(argv)
     if not args.interactive:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
         os.environ["GSIS_GUI_3D"] = "static"
-    tmp = Path(tempfile.mkdtemp(prefix="gsis_gui_shots_"))
-    os.environ["GSIS_GUI_SETTINGS"] = str(tmp / "settings.ini")  # 利用者の設定を変えない
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):  # pragma: no cover
-        pass
-
     from .app import create_app
-
-    app, ThemeManager, AppContext = create_app([sys.argv[0]])
-    from PySide6.QtWidgets import QMessageBox
-
     from .main_window import MainWindow
-    from .paths import repo_root
+    from ..mcp.engine import ModelEngine
+    from ..mcp.workspace import Workspace
 
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
-    QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
-    QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
-
-    root = repo_root()
-    out = Path(args.out) if args.out else root / "docs" / "gui_screenshots"
+    out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    w, h = (int(v) for v in args.size.lower().split("x"))
-    only = [s for s in args.only.split(",") if s]
+    with tempfile.TemporaryDirectory(prefix="gsis_g1_shots_") as td:
+        folder = Path(td)
+        os.environ["GSIS_GUI_SETTINGS"] = str(folder / "settings.ini")
+        app, Theme, Context = create_app()
+        ctx = Context(Theme(app, mode="light"))
+        ctx.theme.apply()
+        win = MainWindow(ctx)
+        ctx.theme.apply()
+        win.resize(*(int(x) for x in args.size.split("x")))
+        win.show()
 
-    tm = ThemeManager(app, mode="light")
-    ctx = AppContext(tm)
-    tm.apply()
-    win = MainWindow(ctx)
-    tm.apply()
-    win.resize(w, h)
-    win.move(40, 40)
-    win.show()
+        def pump(seconds=0.2):
+            end = time.monotonic() + seconds
+            while time.monotonic() < end:
+                app.processEvents()
+                time.sleep(0.01)
 
-    def pump(sec: float = 0.3) -> None:
-        t0 = time.time()
-        while time.time() - t0 < sec:
+        def wait_idle():
+            end = time.monotonic() + 90
+            while win.geometry_page.busy and time.monotonic() < end:
+                pump(0.03)
+            if win.geometry_page.busy or win.project.stages["geometry"] != "done":
+                raise RuntimeError(win.geometry_page.note.text())
+            pump()
+
+        def shot(name):
+            if args.only and not any(part in name for part in args.only.split(",")):
+                return
+            pump(0.4)
+            path = out / (name + ".png")
+            if not win.grab().save(str(path)):
+                raise RuntimeError(f"画面写真を保存できません: {path}")
+            print(path.name, flush=True)
+
+        def theme(mode):
+            win.mode_combo.setCurrentIndex(win.mode_combo.findData(mode))
+            pump()
+
+        try:
+            win.new_project(folder / "project", "オリフィスの形状確認")
+            engine = ModelEngine(Workspace(folder / "cad"))
+            try:
+                engine.call("model_new", {"unit": "mm"})
+                engine.call("add_box", dict(corner=[-5, -4, -0.8], size=[10, 8, 1.6], name="plate"))
+                engine.call("add_cylinder", dict(base=[0, 0, -2], axis=[0, 0, 4], radius=1.3, name="hole"))
+                engine.call("boolean", dict(op="cut", objects=["plate"], tools=["hole"], name="orifice"))
+                engine.call("export", {"path": "orifice.step"})
+            finally:
+                engine.close()
+            gp, sp = win.geometry_page, win.settings_page
+            gp.load_cad(folder / "cad/orifice.step")
+            wait_idle()
+            gp.faces.selectRow(0)
+            shot("32_geometry_cad")
+            theme("dark")
+            shot("33_dark_geometry_cad")
+            theme("light")
+            win.show_page("settings")
+            shot("34_settings_auto")
+            theme("dark")
+            shot("35_dark_settings_auto")
+            theme("light")
+            sp.velocity_auto.setChecked(False)
+            sp.vel_n[0].setValue(30)
+            sp.advanced_toggle.setChecked(True)
+            # 折りたたみの下の入力欄を画面内に入れる。
+            from PySide6.QtWidgets import QScrollArea
+            scroll = sp.findChild(QScrollArea)
+            pump()
+            scroll.ensureWidgetVisible(sp.manual)
+            shot("36_settings_advanced_manual")
+            theme("dark")
+            shot("37_dark_settings_advanced_manual")
+            sp.inputs["estimated_cells"].setValue(100_000_000)
+            shot("38_settings_vram_warning")
+            theme("light")
+            sp.inputs["estimated_cells"].setValue(100000)
+            sp.accept_btn.click()
+            bp, mp = win.boundaries_page, win.mesh_page
+
+            def assign(name, kind, direction, **values):
+                bp.new_patch()
+                bp.name.setText(name)
+                bp.kind.setCurrentIndex(bp.kind.findData(kind))
+                bp.faces.clearSelection()
+                import numpy as np
+                for f in win.project.geometry["faces"]:
+                    if f["type"] == "plane" and np.allclose(f["normal"], direction):
+                        bp.pick_face(f["id"], add=True)
+                for key, value in values.items():
+                    bp.inputs[key].setText(str(value))
+                if not bp.apply_patch():
+                    raise RuntimeError(bp.note.text())
+
+            assign("inlet", "pressure_inlet", [0, 0, -1], temperature=420, pressure=200)
+            assign("outlet", "vacuum", [0, 0, 1])
+            bp.patches.setCurrentIndex(bp.patches.findData("inlet"))
+            shot("44_boundaries")
+            theme("dark")
+            shot("45_dark_boundaries")
+            theme("light")
+            bp.new_patch()
+            bp.name.setText("hole_wall")
+            bp.kind.setCurrentIndex(bp.kind.findData("maxwell_wall"))
+            bp.faces.clearSelection()
+            for f in win.project.geometry["faces"]:
+                if f["type"] == "cylinder":
+                    bp.pick_face(f["id"], add=True)
+            bp.inputs["accommodation"].setText("1.2")
+            shot("46_boundary_validation")
+            theme("dark")
+            shot("47_dark_boundary_validation")
+            theme("light")
+            bp.inputs["accommodation"].setText("0.7")
+            bp.apply_patch()
+            bp.accept_btn.click()
+            mp.patch_inputs["hole_wall"].setText(str(mp.size_max.value() / 2))
+
+            def mesh():
+                if not mp.generate():
+                    raise RuntimeError(mp.note.text())
+                end = time.monotonic() + 90
+                while mp.busy and time.monotonic() < end:
+                    pump(0.03)
+                if mp.busy or not mp.result:
+                    raise RuntimeError(mp.note.text())
+                pump()
+
+            mesh()
+            shot("48_mesh")
+            theme("dark")
+            shot("49_dark_mesh")
+            theme("light")
+            sp.inputs["free_vram_gib"].setText("0.01")
+            sp.accept_btn.click()
+            bp.accept_btn.click()
+            mesh()
+            shot("50_mesh_vram_warning")
+            win.show_page("geometry")
+            gp.flow.setCurrentIndex(1)
+            gp.load_cad(folder / "cad/orifice.step")
+            wait_idle()
+            gp.view.set_view("xz")
+            shot("40_geometry_external")
+            theme("dark")
+            shot("41_dark_geometry_external")
+            theme("light")
+            win.show_page("ai")
+            shot("42_geometry_ai_tab")
+            theme("dark")
+            shot("43_dark_geometry_ai_tab")
+            win.save()
+        finally:
+            win.project.dirty = False
+            win.close()
             app.processEvents()
-            time.sleep(0.01)
-
-    def wait(cond, timeout: float = 180.0) -> bool:
-        t0 = time.time()
-        while time.time() - t0 < timeout:
-            app.processEvents()
-            if cond():
-                return True
-            time.sleep(0.03)
-        return False
-
-    shots: list[str] = []
-
-    def shot(name: str) -> None:
-        if only and not any(s in name for s in only):
-            return
-        pump(0.6)
-        path = out / f"{name}.png"
-        win.grab().save(str(path))
-        shots.append(path.name)
-        print(f"書き出し: {path}")
-
-    def set_theme(mode: str) -> None:
-        win.mode_combo.setCurrentIndex(win.mode_combo.findData(mode))
-        pump(0.5)
-
-    run_kin1 = root / "runs/kinetic/tube_delta1_cis"
-    run_kin10 = root / "runs/kinetic/tube_delta10_cis"
-    run_mac100 = root / "runs/macro/tube_hex_d100_nsf"
-    run_mac1000 = root / "runs/macro/tube_hex_d1000_nsf"
-
-    # 1. ケース設定(δ_rp = 1 の CIS のケースと check-case)
-    cp = win.case_page
-    win.show_page("case")
-    cp.load_file(root / "cases/tube_vacuum/kinetic/tube_delta1_cis.toml")
-    if cp.run_check():
-        wait(lambda: cp._proc is None, 120)
-    shot("01_case")
-
-    # 2. メッシュ(既存の六面体メッシュ 135,104 セル)
-    mp = win.mesh_page
-    win.show_page("mesh")
-    mp.load_mesh(root / "cases/tube_vacuum/mesh/tube_hex.pmesh")
-    wait(lambda: not mp._busy, 180)
-    mp.view.set_view("focus")
-    shot("02_mesh_section")
-    mp.rb_boundary.setChecked(True)
-    mp.view.set_view("iso")
-    mp.tabs.setCurrentWidget(mp.patch_table)
-    shot("03_mesh_patches")
-    mp.rb_section.setChecked(True)
-    mp.tabs.setCurrentWidget(mp.quality_table)
-
-    # 3. 実行: 既存の出力(δ_rp = 1 の CIS、1,573 反復)を追う
-    rp = win.run_page
-    win.show_page("run")
-    rp.set_case(root / "cases/tube_vacuum/kinetic/tube_delta1_cis.toml")
-    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
-    rp.out_field.setText(str(run_kin1))
-    rp.attach_dir(run_kin1)
-    rp.timer.stop()
-    shot("04_run_monitor")
-
-    # 4. 実行: smoke ケースを CPU で短く実行(本当にソルバーを起動する)
-    if ctx.solver_ok():
-        rp.set_case(root / "cases/smoke/smoke.toml")
-        rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
-        rp.out_field.setText(str(tmp / "smoke_cis"))
-        rp.maxit_check.setChecked(True)
-        rp.maxit_spin.setValue(40)
-        rp.backend_combo.setCurrentIndex(rp.backend_combo.findData("cpu"))
-        rp.print_check.setChecked(True)
-        rp.print_spin.setValue(5)
-        if rp.start():
-            wait(lambda: rp.proc is None, 300)
-        shot("05_run_smoke_cpu")
-        # ないサブコマンドの表示。いまのソルバーには 3 つともあるので、pbc-run のない古いソルバーを装って撮る
-        subs = ctx.subcommands()
-        missing = "run" if "run" not in subs else "pbc-run"
-        saved_subs = ctx._subcommands
-        ctx._subcommands = {k: v for k, v in subs.items() if k != missing}
-        rp.refresh_subcommands()
-        win._update_solver_label()
-        rp.sub_combo.setCurrentIndex(rp.sub_combo.findData(missing))
-        shot("06_run_missing_subcommand")
-        ctx._subcommands = saved_subs
-        rp.refresh_subcommands()
-        win._update_solver_label()
-        rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
-
-    # 5. 結果: 3D・流線・任意断面・線上の分布・中心線・Table 1・履歴
-    rs = win.results_page
-    v = rs.view3d
-    win.show_page("results")
-
-    def idle(timeout: float = 300.0) -> None:
-        wait(lambda: not rs._busy and not rs.runner.busy(), timeout)
-
-    def field(name: str) -> None:
-        v.field_combo.setCurrentIndex(next(k for k in range(v.field_combo.count())
-                                           if v.field_combo.itemData(k).name == name))
-
-    def mode(key: str) -> None:
-        v.mode_combo.setCurrentIndex(v.mode_combo.findData(key))
-
-    for run in (run_kin10, run_mac100, run_mac1000):  # 比べる計算(Table 1 用)
-        if run.is_dir() and rs.load(run):
-            idle()
-            rs.pin_current()
-    if rs.load(run_kin1):
-        idle()
-    rs.tabs.setCurrentWidget(v)
-    v.ctl.setCurrentIndex(0)
-    mode("contour")
-    idle()
-    v.view.set_view("focus")
-    shot("07_results_3d_contour")
-    mode("3d")
-    field("u")
-    idle()
-    v.view.set_view("focus")
-    shot("08_results_3d_velocity")
-    # 流線(円盤の種、管の入口の手前)と 3D の断面
-    field("p")
-    v.ctl.setCurrentIndex(2)
-    v.apply_stream()
-    idle()
-    v.view.set_view("focus")
-    shot("17_results_streamlines")
-    # 流線だけ(領域の輪郭を薄く)
-    v.ctl.setCurrentIndex(0)
-    mode("none")
-    v.outline_check.setChecked(True)
-    idle()
-    v.view.set_view("focus")
-    shot("18_results_streamlines_outline")
-    v.outline_check.setChecked(False)
-    v.stream_check.setChecked(False)
-    # 任意断面: x 一定(X = 5)、u_x の等値線、色の範囲は断面の中
-    v.ctl.setCurrentIndex(1)
-    v.plane_preset.setCurrentIndex(v.plane_preset.findData("x"))
-    v.ctl.setCurrentIndex(0)
-    mode("contour")
-    field("u")
-    v.range_combo.setCurrentIndex(v.range_combo.findData("view"))
-    idle()
-    v.view.set_view("focus")
-    v.ctl.setCurrentIndex(1)
-    shot("19_results_slice_x")
-    # 任意断面: 自由な法線(下流槽の噴流を斜めに切る)、u_x の等値線、断面に垂直に見る
-    v.origin_field.setValue((19.0, 0.0, 0.0))
-    v.normal_field.setValue((1.0, 0.0, 0.4))
-    v._on_plane_edited()
-    idle()
-    v.view.set_view("plane")
-    shot("20_results_slice_free")
-    v.range_combo.setCurrentIndex(v.range_combo.findData("all"))
-    # 断面上の 2 次元の流線(z = 0 の断面、面内の速さで色付け)
-    v.plane_preset.setCurrentIndex(v.plane_preset.findData("z0"))
-    v.ctl.setCurrentIndex(2)
-    v.seed_combo.setCurrentIndex(v.seed_combo.findData("plane2d"))
-    v.seed_n.setValue(200)
-    v.apply_stream()
-    v.ctl.setCurrentIndex(0)
-    mode("slice")
-    field("p")
-    idle()
-    v.view.set_view("focus")
-    v.ctl.setCurrentIndex(2)
-    shot("21_results_streamlines_2d")
-    v.stream_check.setChecked(False)
-    v.seed_combo.setCurrentIndex(v.seed_combo.findData("disk"))
-    v.seed_n.setValue(60)
-    v.ctl.setCurrentIndex(0)
-    mode("contour")
-    idle()
-    # 線上の分布: 管の直径(X = 5)
-    lp = rs.profile
-    rs.tabs.setCurrentWidget(lp)
-    lp.preset.setCurrentIndex(lp.preset.findData("diam_mid"))
-    idle()
-    shot("22_results_line_profile")
-    lp.preset.setCurrentIndex(lp.preset.findData("axis_tube"))
-    idle()
-    rs.show_pinned.setChecked(False)
-    rs.tabs.setCurrentIndex(rs.tabs.indexOf(lp) + 1)
-    shot("09_results_centerline")
-    rs.tabs.setCurrentIndex(rs.tabs.indexOf(lp) + 2)
-    shot("10_results_table1")
-    rs.tabs.setCurrentIndex(rs.tabs.indexOf(lp) + 3)
-    shot("11_results_history")
-
-    # 6. ダークモード
-    set_theme("dark")
-    rs.tabs.setCurrentIndex(rs.tabs.indexOf(lp) + 1)
-    shot("12_dark_results_centerline")
-    rs.tabs.setCurrentWidget(v)
-    v.ctl.setCurrentIndex(1)
-    v.plane_preset.setCurrentIndex(v.plane_preset.findData("z0"))
-    v.ctl.setCurrentIndex(0)
-    mode("contour")
-    v.range_combo.setCurrentIndex(v.range_combo.findData("all"))
-    idle()
-    v.view.set_view("focus")
-    shot("13_dark_results_3d")
-    mode("3d")
-    v.ctl.setCurrentIndex(2)
-    v.apply_stream()
-    idle()
-    v.view.set_view("focus")
-    shot("23_dark_results_streamlines")
-    win.show_page("run")
-    rp.set_case(root / "cases/tube_vacuum/kinetic/tube_delta1_cis.toml")
-    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
-    rp.out_field.setText(str(run_kin1))
-    rp.attach_dir(run_kin1)
-    rp.timer.stop()
-    shot("14_dark_run_monitor")
-    win.show_page("case")
-    shot("15_dark_case")
-    win.show_page("mesh")
-    shot("16_dark_mesh")
-    set_theme("light")
-
-    win.close()
-    app.processEvents()
-    shutil.rmtree(tmp, ignore_errors=True)
-    print(f"{len(shots)} 枚: {', '.join(shots)}")
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     sys.exit(main())

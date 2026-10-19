@@ -1,14 +1,15 @@
-# GUI(gsis-gui、試作 v0.2)
+# GUI(gsis-gui、汎用アプリ G2)
 
-- 版: 0.2 / 2026-10-16(v0.1 へのユーザーの意見を受けて、結果の画面に流線・任意の断面・線上の分布を足した)
+- 版: 0.5 / 2026-10-19。G3a: 実行・結果の一般化、GPU順番待ち、管の例題を実装。
 - 2026-10-18: 画面「モデリング(AI)」を足した(§2.3。自然言語の指示で、AI が gmsh の MCP ツールで計算領域を作り、パッチを付け、`.pmesh` まで書き出す)
 - 2026-10-18(追加): Anthropic 形式の既定のモデルを `claude-opus-5-5` にした(ユーザーの決定)。OpenAI 形式に Responses API を足した(Chat Completions API と選べる。§2.3.4・§2.3.8)。画面の画像 01〜31 を、5 つの画面の今の GUI で撮り直した(§5)
 - 仕様: `docs/spec.md` §4.1・§4.6・§6
 - 置き場所: `python/src/gsis_tools/gui/`(サブパッケージ `gsis_tools.gui`)、試験は `python/tests/test_gui_*.py`、画面の画像は `docs/gui_screenshots/`
 
-管ケース(円管 → 真空)の一連の流れ ── ケース設定 → メッシュ → 実行 → 結果の比較 ── を画面で通すための試作。計算領域は、管のメッシュの画面のほか、モデリング(AI)の画面で AI に作らせることもできる。
-ソルバー `gsis-solver` とは、ファイル(ケース TOML・メッシュ・結果)とサブプロセスだけでやり取りする。GUI がなくても、
-すべての機能は CLI(`gsis-solver`・`gsis-tools`)とスクリプトで使える。
+計算を **形状 → 設定 → 境界条件 → メッシュ → 実行 → 結果** の6段階で作るアプリ。
+形状から四面体メッシュ、ソルバー用 `case.toml` を作成・保存し、プロジェクト内に実行履歴と結果を残せる。
+Maxwell壁・質量流量入口・NSF・ソルバーの自動速度格子・`check-case --json` との突き合わせはG3bで接続する。
+ソルバーとはファイルとサブプロセスでやり取りし、Qtなしの `project.case_document()` で `case.toml` を生成する。
 
 ## 1. 起動
 
@@ -16,16 +17,17 @@
 
 ```powershell
 uv run --project python --extra gui gsis-gui
-uv run --project python --extra gui gsis-gui --case cases\tube_vacuum\kinetic\tube_delta1_cis.toml
+uv run --project python --extra gui gsis-gui --project <計算フォルダ>
 uv run --project python --extra gui gsis-gui --results runs\kinetic\tube_delta1_cis --theme dark
 ```
 
 | 引数 | 内容 |
 |---|---|
 | `--theme system\|light\|dark` | 表示モード(既定は前回の選択、初回は `system` = OS の設定に合わせる) |
-| `--case FILE.toml` | 起動時にケースを開く |
+| `--project DIR\|project.toml` | 起動時にプロジェクトを開く |
+| `--case FILE.toml` | 旧ケースを独立した編集窓で開く。管は「プロジェクト → 例題を開く…」でも開ける |
 | `--results RUN_DIR` | 起動時に出力フォルダを読み込み、結果の画面を出す |
-| `--page case\|mesh\|ai\|run\|results` | 最初に出す画面(`ai` はモデリング(AI)) |
+| `--page geometry\|settings\|boundaries\|mesh\|ai\|run\|results` | 最初に出す段階。前段が未完了なら進めない。`ai` は形状内のAIタブ |
 | `--solver EXE` | 使う `gsis-solver`(既定は `build/release/src/gsis-solver.exe`、なければ `build/release-cpu/…`) |
 | `--offscreen` | 画面を出さずに動かす(確認用。Qt の offscreen、3D は静止画の方式) |
 | `--quit-after 秒` | 指定した秒数で終わる(起動の確認用) |
@@ -53,32 +55,161 @@ uv run --project python --extra gui gsis-gui --results runs\kinetic\tube_delta1_
 
 ## 2. 画面
 
-左の一覧で 5 つの画面を切り替える。上のツールバーに、使っているソルバー(と使える実行のサブコマンド)、ソルバーの選択、表示モードがある。
+左の6段階に `○ 未着手`・`✓ 済`・`! 要やり直し` を表示する。前段が済んでいない項目は無効になり、ツールチップに理由が出る。
+前段を変えると、済になったことのある後段を要やり直しにする。済になったことがない段階は未着手を保つ。古いメッシュは残すが、検証済みの印を外す。
 
-### 2.1 ケース設定
+### 2.1 プロジェクトと形状
 
-![ケース設定](gui_screenshots/01_case.png)
+「プロジェクト」メニューから新規・開く・保存・名前を付けて保存・最近使ったプロジェクトを選ぶ。
+新規と別名保存は空のフォルダを選び、別名保存ではCAD・境界・メッシュ・実行履歴も複製して相対パスを保つ。
+計算名は上の欄で変えられる。未保存の変更があればタイトルに `*` が付き、切替・終了時に保存・破棄・取消を選べる。
 
-- 管ケースの TOML(`docs/spec.md` §4.6)を節ごとの入力欄で編集する: `[case]`・`[gas]`・`[conditions]`・`[[boundary]]`・`[velocity_grid]`・`[gsis]`・`[kinetic]`・`[macro]`・`[output]`
-- **プリセット**: He 管 δ_rp = 1 / 10 / 100 / 1000(論文 §4.1: He、管半径 1 mm、T0 = 273.15 K、30×24×24 の速度格子 [−10, 10] × [−8, 8]²、GSIS は n_cis = 5・max_pbc = 10・cfl_pbc = 500・tolerance = 1e-5、メッシュは `cases/tube_vacuum/mesh/tube_hex.pmesh`)。mode は gsis / cis を選ぶ。プリセットは新しいケース(保存するまでファイルはない)
-- **導出量**(右上): R、μ0、√(2RT0)、p_in、ρ_in、Kn、δ、平均自由行程、質量流量の基準、分布関数のメモリ。C++ の `derive_quantities` と同じ式で画面が計算する(check-case の表示と有効数字 6 桁で一致することを試験で確かめている)
-- **検査**: 入力欄の誤り(空欄、負の値、境界条件に要る値の不足、メッシュにないパッチ、境界条件のないパッチ)はその場で表示する。「検査(check-case)」と「保存」は `gsis-solver check-case` を実行して結果を右下に出す。保存は check-case が通ってから書く(エラーなら保存するか尋ねる)
-- **読み書き**: 元のファイルのコメント・並び・書き方を保つ(値を変えたキーだけを書き換える。変えなければ 1 文字も変わらない)。`[gsis]` は、既定値(5、10、500、1e-5)と同じで元のファイルにない項目は書かない。境界条件の種類に要らない値(灰色の欄)は書かない
-- メッシュのパスは TOML の場所からの相対パスで書く(C++ と同じ規則)。別の場所に保存するときは相対パスを直す
-- `[kinetic]`・`[macro]` は既知のキーを一覧から選べる(型・既定値・説明を出す。知らないキーは黄色で示す。ソルバーはエラーにする)
+![形状](gui_screenshots/32_geometry_cad.png)
+![形状・ダーク](gui_screenshots/33_dark_geometry_cad.png)
 
-### 2.2 メッシュ
+- STEP・IGES・BREPを選び、単位(m / cm / mm / um)を指定して読み込む。STEP・IGESはファイル内の単位をOCCが変換する。BREPは選んだ単位で解釈する。
+- 内部流は立体そのものを流体にする。外部流は外接箱と同じ中心に各辺を指定倍率で拡大した箱を作り、物体を引く。倍率は1より大きい数。
+- 閉じた立体が1つ、体積が正、体積に属さない面がないことを検査する。IGESの閉じた面は縫い合わせる。小さい面・辺の自動削除はしない。
+- 表示と一覧はSI(m、m²、m³)。番号・面積・重心・外向き法線を表示し、表で選ぶと3Dでも強調する。曲面の法線は面上の代表点での値。
+- 全表面積の1e-6未満の面、外接箱の対角長の1e-5未満の辺を警告する。球の極など正常な退化辺は除く。
+- 形状の外接箱の最小辺を `L_ref` の既定にする。単位・流れ・倍率を変更したら再検査する。
+- AIタブの「AIの形状を流体領域に使う」でBREP・手順・伏せ字処理済みの会話を保存し、CADと同じ検査を通す。採用後にAI側で編集しても、採用済みBREPは保持する。更新には再度採用する。
 
-![メッシュ(断面)](gui_screenshots/02_mesh_section.png)
-![メッシュ(境界パッチ)](gui_screenshots/03_mesh_patches.png)
+![外部流](gui_screenshots/40_geometry_external.png)
+![AIタブ](gui_screenshots/42_geometry_ai_tab.png)
 
-- `gsis_tools.geometry.tube` の `generate_tube_hex`(構造六面体、O 型断面)・`generate_tube_tet`(gmsh の四面体)で管メッシュを作る。設定は `gsis-tools mesh tube` と同じ(目標セル数、管半径、六面体の n_theta・ds_wall・ds_mouth・h_tube・max_size・growth・refine、四面体の max_size・h_tube・gradient・アルゴリズム・スレッド数)。同じメッシュを CLI で作るコマンドも表示する
-- 生成と読み込みは別スレッド(画面は固まらない)。四面体は gmsh をメインスレッドで先に初期化してから別スレッドで作る
-- **品質**: セル数、要素の内訳、セル寸法 h_V(R 単位)、最大辺、辺の比、非直交角(平均・99%・最大)、歪み、体積比、体積(円柱の値との差)、領域別(上流槽・管・下流槽)のセル数と h_V、pmesh §4 の検査。**パッチ**: 面の数と面積(円の面積との差)
-- **3D 表示**: 境界パッチを色分けした表面(入口は青、出口は緑、壁は灰緑)。「断面」は z ≤ 0 の側のセル(断面にかかるセルを含む)を見せ、断面のセルの形が分かる。視点は「斜め」「上から」「管の付近」
-- 既存の `.pmesh` を開ける(metadata から設定を読み戻す)。保存は `.pmesh` と品質レポート(`<名前>_quality.md`)、必要なら ParaView 用の VTU。「ケースに使う」で、保存したメッシュをケース設定のメッシュにする
+#### 保存形式(版1)
 
-### 2.3 モデリング(AI)
+```text
+<project>/
+  project.toml
+  geometry/source_<hash>.step    # 元CADの写し(拡張子は元形式)
+  geometry/domain_<hash>.brep    # 流体領域(geometry.unitの単位)
+  geometry/ai_state.json         # AIを採用した場合の手順
+  geometry/ai_conversation.json  # AIを採用した場合の会話。キーは保存しない
+  boundaries.json               # 境界の値と面の幾何の指紋
+  mesh/fluid.pmesh               # SI単位の四面体メッシュ
+  mesh/fluid_quality.md          # 品質、形状の面積・体積との差
+  mesh/fluid_quality.json        # 品質の数値とVRAMの概算
+  case.toml                     # プロジェクトから生成。手では編集しない
+  runs/<日時>/case.toml           # 実行時の入力の写し
+  runs/<日時>/gui_run.json        # 例題の識別・作成日時・実行コマンド
+  runs/<日時>/                   # history.csv・summary.json・VTU
+```
+
+gmshの取り込みキャッシュは `.gsis_mcp/` に置く。AI手順の再現に要る取り込みCADも複製する。
+`project.toml` は `format = "gsis-project"` と整数の `version = 1` を持つ。未知の版は開かない。
+
+| 節 | 内容と書式 |
+|---|---|
+| `[project]` | `name`: 計算名(文字列) |
+| `[stages]` | `geometry/settings/boundaries/mesh/run/results`: `pending/done/redo` のいずれか |
+| `[geometry]` | `source/domain`: 相対パス、`unit`: m/cm/mm/um、`flow`: internal/external、`box_factor`: 倍率、`source_kind`: cad/ai、`accepted/valid`: 真偽、`volume`: m³、`length_ref`: m、`bbox`: 最小xyz・最大xyzの6要素[m]、`errors/warnings`: 文字列配列 |
+| `[[geometry.faces]]` | `id`: 整数、`area`: m²、`centroid`: xyz[m]、`normal`: 外向き単位法線xyz(不明時は省略)、`type`: 面の種類 |
+| `[geometry.pending_input]` | 未確定の `unit/flow/box_factor`。前回の領域は検証済みとして扱わない |
+| `[settings]` | `GeneralSettings.to_dict()` の全フィールド。SI入力、手動速度の範囲は√(R T0)単位。下記参照 |
+| `[settings.kinetic]` / `[settings.macro]` | 上級のキーと値。既知の型を検査する |
+| `[mesh]` | `path`: 相対パス(既定 mesh/fluid.pmesh)。`validated` は上流変更時に削除 |
+
+`[settings]` の全フィールド(下は既定値。L_refは形状から更新):
+
+```toml
+[settings]
+mode = "gsis" # gsis / cis / nsf(NSFの実行接続はG3b)
+gas = "He" # He / Ne / Ar / Kr / Xe / 任意
+molecular_mass = 6.65e-27
+mu_ref = 1.916e-5
+T_ref = 273.15
+omega = 0.66
+L_ref = 0.001
+length_auto = true
+T0 = 273.15
+wall_temperature = 273.15
+p_ref = 100.0
+T_min = 273.15
+T_max = 273.15
+u_max = 0.0
+velocity_auto = true
+vel_n = [16, 16, 16]
+vel_range = [[-5.0, 5.0], [-5.0, 5.0], [-5.0, 5.0]]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-5
+velocity_chunk = 0
+estimated_cells = 100000
+free_vram_gib = 14.7
+[settings.kinetic]
+[settings.macro]
+```
+
+AIの記録は `geometry.ai_state`・`geometry.ai_conversation` に相対パスを保存する。
+`boundaries.json` は境界の辞書の配列。`faces` と同じ順序の `fingerprints`(SIの面積・重心・外向き法線・面の種類)を付けて幾何で照合する。
+`case.toml` 生成時は `faces/fingerprints/automatic` を含めず、ソルバー用の境界キーだけを書く。Maxwell壁・質量流量入口の追加値も保持する。
+
+### 2.2 設定、境界条件とメッシュ
+
+![設定](gui_screenshots/34_settings_auto.png)
+![上級・手動](gui_screenshots/36_settings_advanced_manual.png)
+
+- モードはGSIS-PBC / CIS単独 / NSFのみ。気体はHe・Ne・Ar・Kr・Xeのプリセットと任意の単原子物性。
+- Heはv1の値。他の4種は **Bird (1994) 表 A1、273 K** のVHS定数へ切り替えた。値は統括役の提供で、G2では一次資料と照合していない。
+- 基準長さの自動／手動、基準温度・圧力、境界の最低／最高温度と最大速度を入力する。境界の割り当て・確定時に `GeneralSettings.update_boundary_defaults()` で更新する。圧力境界がなければ入力した圧力を保つ。
+- `n_cis/max_pbc/cfl_pbc/tolerance` を編集する。上級では運動論とPBCの既知のパラメータを追加できる。メモリ見積もりはFP32。
+- 自動の速度範囲は±(|u|max + 5√(R T_max))。幅/n ≤ 0.7√(R T_min)となる偶数の点数を採り、T0で無次元化して `case.toml` に書く。手動は各軸の点数と範囲を指定する。
+- R、μ(T0)、平均自由行程、Kn、点数、VRAMの概算を編集ごとに表示する。f=セル数×速度点×4 B、作業領域=セル数×チャンク幅×16 B、固定費0.1 GB。空きから1 GBを残し、自動チャンクを縮める。収まらなければセル数・速度点を減らす案を出す。NSFではfとチャンクの割当てを0とする。
+- 設定画面のセル数・空きVRAMは仮定値。メッシュ画面では実セル数で再計算し、予算超過時に実行への遷移を止める。S2の `check-case --json` との一致はG3で確認する。
+- 不正な入力では確定・保存を止める。「設定を確定して境界条件へ」で済にする。
+
+| 気体 | 分子の質量 [kg] | μ_ref [Pa·s] | T_ref [K] | ω |
+|---|---:|---:|---:|---:|
+| Ne | 33.5e-27 | 2.975e-5 | 273 | 0.66 |
+| Ar | 66.3e-27 | 2.117e-5 | 273 | 0.81 |
+| Kr | 139.1e-27 | 2.328e-5 | 273 | 0.80 |
+| Xe | 218.0e-27 | 2.107e-5 | 273 | 0.85 |
+
+#### 境界条件
+
+![境界条件](gui_screenshots/44_boundaries.png)
+![境界条件・ダーク](gui_screenshots/45_dark_boundaries.png)
+
+1. 一覧の行、または対話型3Dの面をクリックする。Ctrlで追加選択し、ドラッグは視点を回転する。offscreenの静止画像では一覧を使う。
+2. 「新しいパッチ」で名前・種類・値を入力し、「選択した面を割り当て・更新」を押す。同じ面の前の割り当ては置き換える。パッチ名は英字で始まる英数字・`_`・`-`。
+3. 上のパッチ一覧から既存パッチを選ぶと、その面と値を編集できる。「削除して既定の壁へ」で割り当てを解除する。
+4. 「境界条件を確定してメッシュへ」で済にする。編集中の値は先に割り当てボタンで確定する。未確定の値があれば保存・境界の確定を止める。
+
+| 種類 | 入力 |
+|---|---|
+| `diffuse_wall` | 温度 [K]、任意の壁速度 x/y/z [m/s] |
+| `maxwell_wall` | 温度、適応係数 0 < α ≤ 1、任意の壁速度 |
+| `pressure_inlet` | 正の圧力 [Pa]、温度、接線速度 `extrapolate` / `zero` |
+| `pressure_outlet` | 0以上の圧力 [Pa] |
+| `vacuum` | 追加の値なし |
+| `mass_flow_inlet` | 正の流入質量流量 [kg/s]、温度、接線速度 `extrapolate` / `zero` |
+| `symmetry` | 法線が座標軸にそろう平面だけ。同じパッチ内は同じ軸に限定 |
+
+未割り当て面は `default_wall` (予約名)の拡散壁に入れる。温度は設定画面の「既定の壁温度」(`wall_temperature`)で指定する。境界の最高温度から基準温度を更新しても既定壁の温度は変わらない。面ごとに異なる温度にする場合は、新しい壁パッチへ割り当てる。G1の既存プロジェクトでこの設定がない場合は、保存されていた基準温度から補う。
+
+CADまたはAI形状の再採用時には、番号に依存せず幾何の指紋で照合する。一意に照合できなかった旧面を形状画面と状態欄に知らせる。割り当てを失った明示パッチは空のまま残すので、再割り当てまたは削除してから境界を確定する。
+
+![境界入力の検査](gui_screenshots/46_boundary_validation.png)
+
+#### メッシュ
+
+![メッシュ](gui_screenshots/48_mesh.png)
+![メッシュ・ダーク](gui_screenshots/49_dark_mesh.png)
+
+- 全体の最大・最小寸法、パッチごとの寸法(空欄は全体)、成長率を入力して「メッシュを生成」。パッチ寸法は全体の最小〜最大の範囲。
+- 成長率 `g` は、面から離れた距離 `d` に対する目標寸法場の傾き `dh/dd = g - 1` として指定する。gmshのDistance/Threshold場で最大寸法まで広げる。生成後の隣接セル寸法比を厳密に上限規制する値ではない。
+- 生成は別スレッドが専用プロセスを起動し、MCP engine のCAD・物理グループ・gmsh生成・pmesh出力を再利用する。「停止」は子プロセスを終了し、途中出力を削除する。以前の完成したメッシュは保持する。生成中は段階の切り替え・保存を止める。
+- 終了後にセル数・非直交角・歪み・隣接体積比、各パッチの面積とCAD面積との差、実セル数によるVRAMの概算を表示する。メッシュと品質レポートは `mesh/<名前>.pmesh`・`<名前>_quality.md`・`<名前>_quality.json` に保存する。
+- 予算内ならメッシュを済にし、`case.toml` を生成・保存する。予算超過ではメッシュと品質を保存しても済にせず、実行へ進ませない。セル数または速度点を減らす。
+- 現行ソルバーとの接続試験は `diffuse_wall/pressure_inlet/pressure_outlet/vacuum/symmetry` の5種。自動速度格子も計算した数値を `n/range` として書く。Maxwell壁・質量流量入口・NSF・ソルバー側の自動格子はG3bで確認する。
+- 数値入力欄は有効数字6桁程度で表示する。画面から編集しなければ、表示前の精度を保存・計算に使う。
+
+![VRAM予算超過](gui_screenshots/50_mesh_vram_warning.png)
+
+### 2.3 モデリング(AI) — 形状内のタブ
 
 自然言語で指示すると、AI(LLM)が gmsh の MCP ツール(`docs/mcp.md`、31 個)を使って計算領域の形状を作り、境界パッチを
 付け、`.pmesh` まで書き出す。ツールで形状・パッチ・メッシュが変わるたびに、3D 表示がその場で更新される。
@@ -93,16 +224,10 @@ AI は API キーで動かし、Anthropic 形式(Messages API)と OpenAI 形式(
 
 #### 2.3.1 使い方
 
-1. 「設定…」で形式・接続先・モデル・API キーを選ぶ(§2.3.4・§2.3.5)。環境変数 `ANTHROPIC_API_KEY` があり、公式の接続先を
-   使うなら、そのままでよい(既定のモデルは `claude-opus-5-5`)。OpenAI 形式はモデルを選ぶ(キーは `OPENAI_API_KEY` か入力)
-2. 下の欄に指示を書いて「送る」(Ctrl+Enter)。例: 「半径 1 mm・長さ 10 mm の管の上流に半径 8 mm・長さ 8 mm、下流に半径
-   4 mm・長さ 4 mm の槽を付けた計算領域を作り、x = 0 を inlet、x = 22 を outlet、残りを wall にして tube/tube.pmesh に
-   書き出して」
-3. AI は形状を作り(batch で検算付き)、`measure`・`check_geometry` で確かめ、パッチを付け、付いていない面がないことを確かめ、
-   メッシュを作って `.pmesh` を書き出す。会話の欄に AI の文章とツールの呼び出しの記録(▶ で開くと引数と結果)が出る
-4. 書き出すと、会話の欄に「メッシュの画面で開く」が出る(上の「書き出したメッシュを開く」も同じ)。メッシュの画面で品質と
-   パッチを確かめ、「ケースに使う」でケース設定のメッシュにする
-5. 続けて指示できる(会話は続く)。会話を最初からにするときは「会話のリセット」(モデルの状態はそのまま)
+1. 形状の「モデリング(AI)」タブを開く。APIの設定とキーの扱いは従来どおり(§2.3.4・§2.3.5)。
+2. 自然言語で形状を指示し、3Dと会話の結果を確認する。
+3. 「AIの形状を流体領域に使う」を押し、通常のCADと同じ領域作成・検査を通す。
+4. 形状が済になったら設定に進む。AIの `.pmesh` の受渡しはG2で接続する。
 
 #### 2.3.2 画面
 
@@ -293,13 +418,12 @@ SDK 3.35.1 の型(`ResponseCreateParams` の `store`・`include` の説明、`Fu
 
 ### 2.4 実行
 
-![実行(既存の出力を追う)](gui_screenshots/04_run_monitor.png)
-![実行(smoke ケースを CPU で実行)](gui_screenshots/05_run_smoke_cpu.png)
+![プロジェクトの実行](gui_screenshots/51_project_run.png)
+![小さな箱をCPUで5反復](gui_screenshots/59_general_cpu_run.png)
 
-- `gsis-solver` のサブコマンド `run`(フェーズ 4)・`cis-run`・`pbc-run` を QProcess で起動・停止する。作業ディレクトリはリポジトリのルート。`run` があればそれを既定にする
-- 使えるサブコマンドと引数は `gsis-solver --help` から読む。**ないサブコマンド**は一覧に「このソルバーにはない」と出し、選ぶと注意を表示し、実行しようとすると理由(`run` はフェーズ 4 で追加予定)を窓で知らせて起動しない。ソルバーを作り直したら「サブコマンドを読み直す」
-  ![サブコマンドがないとき(いまのソルバーには 3 つともあるので、pbc-run のない古いソルバーを装って撮った)](gui_screenshots/06_run_missing_subcommand.png)
-- 引数: 出力先 `--out`(既定はソルバーと同じ `runs/kinetic/<名前>` など)、反復の上限(`--max-iter` / `--iterations`)、収束判定(`--tol` / `--tolerance`)、実行先・精度(cis-run)、表示の間隔、`--no-vtu`、`--cells-csv`、追加の引数。使い方の行にない引数は渡さず、その旨を出す。出力先に前の結果があれば上書きするか尋ねる
+- プロジェクトのモードから `gsis → run`、`cis → cis-run` を選ぶ。`nsf → pbc-run` の対応は保持するが、G3aでは「ソルバーの対応待ち」と表示して実行しない。
+- 実行ごとに `<project>/runs/YYYY-MM-DD_HHMMSS/` を作り、同じ秒なら `_2` 以降を付ける。その中に入力の写し `case.toml` と識別用の `gui_run.json` を保存し、`--out` で同じフォルダを渡す。メッシュはプロジェクト内の完成品を絶対パスで参照する。過去の実行入力は保持する。
+- 使える引数は `gsis-solver --help` から読む。反復上限・収束判定・実行先・精度・表示間隔・`--no-vtu`・`--cells-csv` を指定できる。追加欄では出力先・実行先・精度の上書きと `--set` を拒否する。実行先をCPUにすればGPUの順番待ちは不要。
 - **ログ**: 標準出力と標準エラー(UTF-8)をそのまま出す(エラーは赤、警告は黄)
 - **グラフ**(1 秒ごとに `history.csv` を読み足す): 上は収束(cis-run は ε、pbc-run は更新量と質量の残差。「収束のグラフに描く列」で選べる)と収束判定の線。下はパッチごとの質量流量(管ケースは論文の無次元質量流量 Ṁ、入口は流入・出口は流出を正)と、論文 Table 1 の値の線(管のメッシュのときだけ)。横軸は反復か経過時間
 - **状況**: 反復、ε(または更新量)、Ṁ と流入・流出の差、経過時間と 1 反復の時間、GPU のメモリ(nvidia-smi で 5 秒ごと。GPU 全体の使用量で、ほかのプログラムの分を含む)
@@ -307,10 +431,47 @@ SDK 3.35.1 の型(`ResponseCreateParams` の `store`・`include` の説明、`Fu
 - **出力フォルダを追う**: 実行せずに、指定した出力フォルダの `history.csv` を読んで表示する(別に起動した計算や、終わった計算を見る)。summary.json があれば、そのケースと収束判定を使う
 - 終わったら「結果を開く」で結果の画面に移る
 
+#### GPUの順番待ち
+
+VRAM概算が **2,000,000,000バイト以上** のGPU計算は、ソルバーを置いたリポジトリの `runs/.gpu_lock` を `mkdir` で取得してから開始する。プロジェクトをリポジトリ外に保存してもロックは同じ場所。ソルバーの祖先からリポジトリを特定できない場合は、アプリのリポジトリを使う。
+
+![GPU順番待ち(撮影用の一時ロック)](gui_screenshots/53_gpu_wait.png)
+![GPU順番待ち・ダーク](gui_screenshots/54_dark_gpu_wait.png)
+
+- 先行計算のロックがあれば「GPUの順番待ち」を表示し、1秒ごとに再試行する。なくなると自動で開始する。「停止」で待機を取り消せる。待機・実行中は設定・保存・プロジェクト切替を止める。
+- `owner.txt` はGUI名、所有トークン、ホスト、GUIのPID、計算名・出力先、開始日時を持ち、起動後にはソルバーPIDを追記する。他の担当の自由形式の `owner.txt` もそのまま表示する。
+- 正常終了・失敗・起動失敗・停止・GUIの通常終了では、**このGUIが取得し、所有トークンが一致するロックだけ**を解除する。他者のものや所有情報が変わったものは保持する。
+- GUIが落ちて残ったロックは、同じPC・同じGUI名でも自動削除しない。GUIのPIDが消えてもソルバーが動いている可能性があるため。表示した `owner.txt` とプロセスを確認し、所有者が計算の終了を確かめてから手動で解除する。GUIには強制解除ボタンを設けていない。
+- 停止は現行のプロセス強制終了を継続する。STOPファイルによる穏やかな停止の接続はG3b。
+
+#### 例題の管
+
+「プロジェクト → 例題を開く…」でδ=1・10・100・1000と空の保存先を選ぶ。`cases/tube_vacuum/gsis/tube_delta*_gsis.toml` の設定と `mesh/tube_hex.pmesh` の写しから、独立したプロジェクトを作る。元のケースやメッシュは変更しない。
+
+- 形状は「既存メッシュから」で済となる。CADは不要。メッシュのパッチ単位で境界の値を変更できるが、パッチ名・面の割当ては固定する。
+- 設定や境界を変えた後は「既存メッシュを確認して使う」で実セル数・VRAMを再確認する。CADがないので四面体への再生成はしない。
+- 速度格子は例題の手動値を保持し、GSISの追加設定も引き継ぐ。4条件で現行の `check-case` を確認済み。大規模な管の再計算・精度検証はG3aでは行っていない。
+- 結果の一覧にはプロジェクト自身の履歴に加え、既存の `runs/kinetic/`・`runs/gsis/` も並ぶ。`runs/kinetic/tube_delta1_cis` などを読み取って比較できる。
+
 ### 2.5 結果
 
-出力フォルダ(`runs/` の下を探して新しい順に並べる。ほかの場所は「参照…」)を読む。タブは「3D 表示」「線上の分布」
-「中心線(Fig.3)」「質量流量(Table 1)」「収束の履歴」「要約(summary.json)」。
+プロジェクトの `runs/` の履歴を新しい順に並べ、選んで読み込む。ほかの場所は「参照…」。過去の出力があれば、現在の設定が要やり直しでも結果を開ける。
+タブは「3D表示」「線上の分布」「パッチ集計・壁面分布」「収束の履歴」「要約(summary.json)」。管の例題だけに「中心線(Fig.3)」「質量流量(Table 1)」と論文の参照線・管用プリセットを表示する。一般形状では領域中央の断面・線を既定とする。
+一般形状の無次元圧力・密度のラベルと線上分布のCSVは `p_ref`・`rho_ref` と表記し、管の例題だけ入口の `p_in`・`rho_in` を使う。
+
+![結果・管の既存出力](gui_screenshots/55_project_results.png)
+![一般の結果・ダーク](gui_screenshots/62_dark_general_results.png)
+
+#### パッチ集計・壁面分布
+
+![パッチの集計と壁面の法線応力](gui_screenshots/57_patch_wall_results.png)
+![パッチ集計・ダーク](gui_screenshots/58_dark_patch_wall_results.png)
+
+- 全パッチの質量流量[kg/s]・熱流量[W]・壁が受ける力の3成分[N]を表とCSVに出す。質量・熱は領域から外向きを正とする。入口は通常負になる(履歴グラフは流入を正にして表示)。ない値は **「ソルバーの出力にない」** と明記する。
+- 質量はsummaryの `mdot_kg_s`、または `mdot_nd` と基準量から求め、なければ境界VTUの `mass_flux × 面積` を積分する。壁の力はsummaryの `momentum_flux_nd` をSIに直すか、境界の `momentum_flux × 面積` を積分する。開口の運動量輸送は壁の力にしない。
+- 熱は境界の `heat_flux_normal × 面積` がある場合に集計する。現行の `energy_flux` は全エネルギー流束なので熱流量に読み替えない。G3aで確認した既存出力では熱流量は欠測となる。S2の新しいsummaryの項目との接続はG3bで照合する。
+- 壁の全パッチ・境界の全パッチ・個別パッチを選び、`boundary.vtu` の法線応力・せん断応力・全エネルギー流束・境界温度など、ある量をSIで色付けする。ベクトルは大きさ・x・y・zを選べる。VTUに熱流束がなければ熱流束は選択肢に出ない。
+- CSVはUTF-8 BOM付き、列名は `patch,type,mass_flow_kg_s,heat_flow_W,force_x_N,force_y_N,force_z_N`。表示の丸め前の値を保存する。
 
 VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示の計算(断面・等値線・流線)・線上の分布・中心線の作り直しも
 別スレッドで 1 つずつ順に行い(`workers.JobRunner`。同じ格子を 2 つのスレッドで同時に触らない)、画面は出来上がったものを
@@ -392,7 +553,7 @@ VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示
 
 | 方向 | ファイル・プロセス | GUI の使い方 |
 |---|---|---|
-| GUI → ソルバー | ケース TOML | 画面で書く(tomlkit。コメントを保つ)。check-case には一時フォルダの写し(メッシュは絶対パス)を渡す |
+| GUI → ソルバー | ケース TOML | `project.case_document()` がメッシュの相対パスと境界を生成。旧編集窓は従来の読書きを保持 |
 | GUI → ソルバー | `gsis-solver --help` | サブコマンドの一覧と、使い方の行にある引数(`--out` など)を読む |
 | GUI → ソルバー | `gsis-solver check-case <toml>` | 出力をそのまま表示。終了コード 0 で合格 |
 | GUI → ソルバー | `gsis-solver run\|cis-run\|pbc-run <toml> --out <dir> …` | QProcess で起動。標準出力・標準エラーは UTF-8 として読む。終了コード 0 / 1(エラー)/ 2(引数の誤り、「知らないサブコマンド」を含む)で説明を変える |
@@ -400,7 +561,7 @@ VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示
 | ソルバー → GUI | `<out>/summary.json` | 反復、収束、時間、`mass_flow.M_dot`(cis-run・run)または `M_dot`(pbc-run)、`patches`(パッチ名と種類)、`reference`(無次元化の基準量。cis-run・run にあり、pbc-run にはない)、`delta`、`tolerance`、`mode`(run の gsis / cis)、`case_file` |
 | ソルバー → GUI | `<out>/fields.vtu`(cis-run)・`cells.vtu`(pbc-run)・`boundary.vtu` | pyvista で読む。セル値は SI(rho, u/U, T, p, …)。ない場はリストに出さない |
 | ソルバー → GUI | `<out>/cells.csv`(任意) | VTU がないときに中心線をこれから作る |
-| GUI → gsis_tools | `generate_tube_hex` / `generate_tube_tet`、`read_pmesh` / `write_pmesh`、`compute_quality`、`format_report` | 関数を直接呼ぶ(メッシュの画面) |
+| GUI → gsis_tools | MCP engine のメッシュ生成・物理グループ・pmesh出力、`compute_quality` / `format_report` | 一般形状の四面体。管の生成器もPython APIに保持 |
 
 `history.csv` の列の使い方:
 
@@ -419,6 +580,8 @@ VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示
 - **論文との比較**: `reference/paper_2610.07658/` の `table1_tube.csv` と `fig3_*.csv` を読む。論文の線・記号は管のメッシュのとき(メッシュの metadata が `gsis_tools.geometry.tube` か、ファイル名が tube で始まる)だけ実行の画面に出す
 
 ## 4. 試験
+
+G1の結果は `docs/phase8_g1_report.md`、G2の結果・コマンドは `docs/phase8_g2_report.md`。`test_gui_general.py` はQtなし、`test_gui_general_pages.py` は6段階・CAD・設定・保存を検査する。G2は `test_gui_boundaries_mesh.py` と `test_gui_boundaries_mesh_pages.py` で、指紋の引き継ぎ、7種の境界、停止、予算超過、箱とオリフィスから現行ソルバーの `check-case` までを検査する。以下の件数は旧版の記録。
 
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
@@ -446,9 +609,9 @@ uv run --project python --extra gui pytest python/tests
 | `test_gui_ai_responses.py` | OpenAI の Responses API の層を `httpx2.MockTransport` で: API の種類の選び方(自動・明示)、送ったリクエストの形(`/v1/responses`、`instructions`・`input`、関数の定義と `strict: false`、`store: false`・`include`、`max_output_tokens`、`previous_response_id` を送らない)、ストリーミングとそうでない応答の読み方(文章・推論の要約・複数の `function_call`・`call_id`・トークン数)、関数の結果(`function_call_output`、画像は `input_image`)、推論の項目を暗号化された内容ごとそのまま送り返すこと、`store: true` の設定、互換サーバー(キーなし・組織の ID を送らない・`include` を送らない)、知らない引数(`include`・`store`)を外して送り直すこと(公式の接続先では `store` を外さない)、`incomplete`(出力の上限・`content_filter`)・断られた応答・`response.failed`、エラー(401・404・500・429 の再試行・通信の切断・SSE の途中の `error`)とキーが説明に出ないこと、読めない引数、モデルの一覧 |
 | `test_gui_ai_agent.py` | AI の反復と裏側(3 つの形式: Anthropic、OpenAI の Chat Completions と Responses): ツールのエラーを返して直させる、1 回の応答の複数の呼び出し、上限、API の応答待ちの停止、ツールの実行中の強制停止(起動し直して自動保存に戻る)、サーバーの異常終了からの復旧、断られた応答、API のエラーと再送、キーがない・401、確認のモード、画像(送る・送らない)、GUI での操作の知らせ、出力の上限で切れた呼び出し、読めない引数・未知のツール、会話の保存と読み込み(形式・API の種類が違えば開かない)、モデルの一覧。本物の MCP サーバーで管を 3 つの形式で作る、メッシュの生成の途中の強制停止(slow)、試験用の小さなサーバーのプロセスを落として復旧する(`fake_mcp_server.py`)、GUI 専用のツールの `_meta`、子プロセスに API キーの環境変数を渡さないこと |
 | `test_gui_ai_secrets.py` | ダミーのキーで管を作る反復を 3 つの形式(Anthropic、OpenAI の Chat Completions と Responses)で通し(SDK の DEBUG のログも集める)、作業フォルダのすべてのファイル・保存した会話・設定・ログ・画面への知らせにキーがないこと、資格情報マネージャーに書かないこと |
-| `test_gui_ai_page.py` | 画面(offscreen): 5 つの画面、模擬の AI で管を作る(会話の欄の記録と折りたたみ、3D 表示、パッチの一覧、トークン数、書き出したメッシュをメッシュの画面で開く)、断面と面の番号、面の選択・差し込み・手でのパッチ・元に戻す、クリックの位置からの面の選択(VTK のセルの picker をオフスクリーンで。選べない線は無視)、ツールを手で実行、設定の画面(キーは伏せ字、欄に戻さない、設定ファイルに書かない、選んだときだけ資格情報マネージャー、OpenAI の既定のモデルは空)、モデルの一覧の取得、停止と再送のボタン、会話の保存・リセット・読み込み、OpenAI 形式(キーなしのローカルのサーバー)、OpenAI の API の種類(設定の画面の「使う API」の表示、会話の形が変わるときのリセット、Responses で送って推論の項目を送り返す、キーを設定ファイルと作業フォルダに書かない)と「※」の注記、AI の文章の HTML を使わないこと、ダーク |
+| `test_gui_ai_page.py` | 画面(offscreen): 形状内のAIタブと共通検査への受渡し、模擬の AI で管を作る(会話の欄の記録と折りたたみ、3D 表示、パッチの一覧、トークン数、AI形状・手順・会話の採用)、断面と面の番号、面の選択・差し込み・手でのパッチ・元に戻す、クリックの位置からの面の選択(VTK のセルの picker をオフスクリーンで。選べない線は無視)、ツールを手で実行、設定の画面(キーは伏せ字、欄に戻さない、設定ファイルに書かない、選んだときだけ資格情報マネージャー、OpenAI の既定のモデルは空)、モデルの一覧の取得、停止と再送のボタン、会話の保存・リセット・読み込み、OpenAI 形式(キーなしのローカルのサーバー)、OpenAI の API の種類(設定の画面の「使う API」の表示、会話の形が変わるときのリセット、Responses で送って推論の項目を送り返す、キーを設定ファイルと作業フォルダに書かない)と「※」の注記、AI の文章の HTML を使わないこと、ダーク |
 | `test_gui_ai_live.py` | 本物の API で 1 回だけ(既定は飛ばす。下の「本物の API の試験」) |
-| `test_gui_app.py` | 画面の組み立てと切り替え、テーマ(スタイルシート・パレット・matplotlib・設定の保存)、ケース設定の入力欄を通した往復と保存、プリセット、check-case(合格と不合格)、run がないときの注意、pbc-run の実行と履歴、停止、六面体・四面体のメッシュ生成と保存、結果の読み込み(解析解を入れた合成データと既存の出力)、Table 1 と中心線の差、書き出し、3D の静止画、任意の断面・流線(3 次元と断面上の 2 次元)・線上の分布と CSV を画面の操作から通す、13.5 万セルの結果で流線を計算している間に画面が固まらないこと(20 ms のタイマーの間隔が 0.5 秒未満)、色の帯の題の字の置き換え |
+| `test_gui_app.py` | 流用した部品: テーマ(スタイルシート・パレット・matplotlib・設定の保存)、run がないときの注意、pbc-run の実行と履歴、停止、結果の読み込み(解析解を入れた合成データと既存の出力)、Table 1 と中心線の差、書き出し、3D の静止画、任意の断面・流線(3 次元と断面上の 2 次元)・線上の分布と CSV を画面の操作から通す、13.5 万セルの結果で流線を計算している間に画面が固まらないこと(20 ms のタイマーの間隔が 0.5 秒未満)、色の帯の題の字の置き換え |
 
 **本物の API の試験**(料金がかかり、指示とツールの結果が外部に送られるので、明示したときだけ動く。開発の中では実行していない):
 
@@ -469,40 +632,39 @@ uv run --project python --extra gui pytest python/tests/test_gui_ai_live.py -s
 1 辺 10 mm の立方体を作って `measure` で確かめる短い指示を 1 回送り(ツールの上限 12)、AI が `add_box`(か `batch`)と `measure` を
 呼んで終わること、最後の文章があることを確かめ、使ったトークン数を出す。
 
-## 5. スクリーンショットの作り方
+## 5. 画面写真
+
+次のコマンドで32–43のうち39を除く11枚と、G2の44–50の7枚を生成する。39はG1の仮画面の記録として保持する。CADは一時フォルダで作り、本物のAPI・ソルバーは呼ばない。
 
 ```powershell
-uv run --project python --extra gui python -m gsis_tools.gui.screenshots                 # 画面を出さずに撮る(既定。3D は静止画の方式)
-uv run --project python --extra gui python -m gsis_tools.gui.screenshots --interactive   # 通常の表示で窓を出して撮る
+$env:TEMP = "$PWD\build\tmp_g"
+$env:TMP = $env:TEMP
+python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots
 ```
 
-`docs/gui_screenshots/` の 01〜23 は、画面を出さない方式(Qt の offscreen、3D は VTK のオフスクリーンの静止画)で撮った
-(2026-10-18 に、左の一覧が 5 つの画面の今の GUI で撮り直した。窓は出ず、1 分ほどで終わる。字体は `C:\Windows\Fonts` を使うので、
-通常の表示と同じ字になる)。06(ないサブコマンドの表示)は、いまのソルバーには `run`・`cis-run`・`pbc-run` がそろっているので、
-`pbc-run` のない古いソルバーを装って撮る。
-平面ウィジェットは対話型の 3D 表示だけのものなので、画像にはない。データは `runs/` の既存の出力
-(`runs/kinetic/tube_delta1_cis`・`tube_delta10_cis`、`runs/macro/tube_hex_d100_nsf`・`tube_hex_d1000_nsf`)を読むだけで、
-実行の画像(05)は smoke ケースの cis-run を CPU で 40 反復だけ実行した(出力は一時フォルダ)。
+ライト・ダークの形状、設定、自動・手動、上級、境界、入力検査、一般メッシュ、VRAM警告、外部流、AIタブを含む。
+01–31は以前のGUI・AIの記録として保持する。
+従来のAIだけの模擬デモは `python -m gsis_tools.gui.screenshots_ai` で撮れる。
 
-モデリング(AI)の画像(24〜31)は別のスクリプトで撮る(2026-10-18。窓は出ず、20 秒ほど):
+G3aの実行・順番待ち・結果の写真51–62(ライト・ダーク各6枚)は次で生成する。
+既存の管の出力を読み、小さな箱だけCPUで5反復計算する。GPU計算は起動せず、順番待ちは一時フォルダの模擬ロックを使う。本物の `runs/.gpu_lock` は操作しない。
 
 ```powershell
-uv run --project python --extra gui python -m gsis_tools.gui.screenshots_ai                # 画面を出さずに撮る
-uv run --project python --extra gui python -m gsis_tools.gui.screenshots_ai --interactive  # 窓を出して撮る
+python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots_g3a
 ```
-
-模擬の AI(`gsis_tools.gui.ai.demo`。HTTP の層の模擬で、実際の API は呼ばない)が、本物の MCP サーバーのツールで管の計算領域を
-2 回の指示で作る(形状とパッチ → メッシュと書き出し。メッシュは size_max 0.8 mm、管の中 0.25 mm、約 3.5 万セル)。形式は
-Anthropic 形式で、既定のモデル `claude-opus-5-5`。設定の画面は、Anthropic 形式(27)、OpenAI 形式の接続(29。API の種類は自動で
-Responses)、応答のタブ(30)、作業のタブ(31。会話の途中で開いた)を撮る。API キーはダミーで、設定の画面では伏せ字。設定と
-作業フォルダは一時フォルダ。
 
 ## 6. 構成
 
 | モジュール | 内容 |
 |---|---|
-| `app.py`・`main_window.py`・`context.py` | 起動、メインウィンドウ(5 画面とツールバー)、画面で共有する状態(ソルバー、テーマ、設定) |
-| `pages/case_page.py`・`mesh_page.py`・`ai_page.py`・`run_page.py`・`results_page.py` | 5 つの画面 |
+| `app.py`・`main_window.py`・`context.py` | 起動、メインウィンドウ(6段階とプロジェクトメニュー)、画面で共有する状態(ソルバー、テーマ、設定) |
+| `pages/geometry_page.py`・`settings_page.py` | 形状(CAD・AI)と設定 |
+| `boundaries.py`・`pages/boundaries_page.py` | 境界の検査、指紋の照合、面の選択と割り当て |
+| `general_mesh.py`・`pages/mesh_page.py` | 一般形状のメッシュ生成・停止、品質、VRAMの検査 |
+| `project.py`・`general_settings.py`・`geometry.py` | Qtなしのプロジェクト・状態・case生成、導出量・速度格子・VRAM、CADの検査 |
+| `pages/ai_page.py`・`run_page.py`・`results_page.py` | AI、プロジェクトの実行と結果。旧 `case_page.py` はCLI互換用に保持 |
+| `project_runs.py`・`examples.py` | 実行入力の写し、実行コマンドの記録、所有者を確認するGPUロック、管の例題の複製 |
+| `patch_results.py`・`pages/boundary_results.py` | パッチのSI集計とCSV、boundary.vtuの壁面分布 |
 | `pages/ai_settings_dialog.py` | モデリング(AI)の設定の画面 |
 | `ai/`(Qt なし) | モデリング(AI)の裏側: `settings.py`(設定)、`secrets.py`(API キー・伏せ字)、`types.py`(形式によらない型)、`providers/`(形式ごとの層: `anthropic_provider.py`・`openai_responses_provider.py`(Responses)・`openai_provider.py`(Chat Completions))、`mcp_client.py`(MCP サーバーの子プロセスとの接続)、`session.py`(自動保存・起動し直し・3D 表示の更新)、`agent.py`(AI の反復)、`backend.py`(別スレッドの asyncio でまとめる)、`conversation.py`(会話の保存)、`prompt.py`(AI への指示)、`tooldefs.py`(ツールの定義の変換)、`surface.py`(3D 表示のデータ)、`demo.py`(模擬の AI) |
 | `pages/results_3d.py`・`line_profile.py` | 結果の画面の「3D 表示」(場と表示・断面・流線)と「線上の分布」のタブ |
@@ -512,9 +674,13 @@ Responses)、応答のタブ(30)、作業のタブ(31。会話の途中で開い
 | `history.py`・`centerline.py`・`reference.py`・`results.py`・`solver.py`・`paths.py` | 履歴、中心線、論文データ、出力フォルダ、ソルバーの呼び出し、パス(Qt なし。試験で直接使う) |
 | `meshgen.py`・`fields.py` | メッシュ生成と品質・3D 用のデータ、VTU の場・任意の断面・等値線・流線・線上の標本と CSV(pyvista。Qt なし) |
 | `workers.py` | 別スレッドの処理(QThread)、結果の画面の計算を 1 つずつ順に行う `JobRunner`、logging の受け渡し |
-| `screenshots.py`・`screenshots_ai.py` | スクリーンショットの作成(01〜23、モデリング(AI)の 24〜31) |
+| `screenshots.py`・`screenshots_ai.py` | スクリーンショットの作成(G1/G2の32〜50、従来AIの24〜31) |
 
 ## 7. 未実装の点・既知の制約
+
+- S2のJSON出力と速度格子・VRAMの照合、新しい境界条件とNSFの受理、実行・結果の一般化はG3。NSFのモード名は `nsf` で確定。
+- VRAMは暫定の固定費と実セル数による見積もりで、GPUの空きの実測ではない。非HeプリセットはBird (1994) 表 A1、273 Kの統括役提供値。
+- IGESは面を縫い合わせる。閉じない面・複数の立体は拒否する。OCCで読み込めない破損CADの自動修復はしない。
 
 - **フェーズ 4 の `run`**: 2026-10-18 の時点では `build/release` のソルバーにある(上のツールバーに run・cis-run・pbc-run と出る。2026-10-16 にはなかった)。開発中の `build/phase4` のソルバーでは、`--help` から `run` と引数(`--out`・`--max-iter`・`--tol`・`--backend` など)を読み、GUI のすべての項目が渡せること、出力(history.csv・summary.json)が読めることを確かめた。GPU を長く使うので、`run` の実際の実行は GUI から試していない
 - 結果の 3D 表示に、等値面と境界面の値(`boundary.vtu` の質量流束など)の表示はない。流線・任意の断面・線上の分布は v0.2 で足した
@@ -523,11 +689,11 @@ Responses)、応答のタブ(30)、作業のタブ(31。会話の途中で開い
 - 分布関数の断面表示(spec §6 の任意の機能)はない(ソルバー側にプローブ出力が要る)
 - 停止はプロセスの強制終了なので、止めた時点の summary.json・VTU は書かれない(履歴は残る)
 - 実行の画面は 1 つの計算だけを扱う(複数の計算を並べて実行・監視しない)。ソルバーの標準出力は、この画面から起動したときだけ表示できる(「出力フォルダを追う」は history.csv だけ)
-- メッシュの画面は管(論文 §4.1 の形)だけ。平板などほかの形、gmsh の `.msh` の変換は CLI(`gsis-tools`)を使う
+- 一般形状は四面体、管の例題は既存六面体の複製。例題の再生成にはCADがないため対応しない。管の生成器はPython APIに保持する
 - 3D の表示は 13.5 万セルで実用的な速さ(VTU の読み込みと中心線 2 秒前後、断面 0.02 秒、流線は種 60 個で 0.9 秒・300 個で 4 秒)。さらに大きいメッシュと、種が数千個の流線は確かめていない(別スレッドなので画面は固まらないが、時間はかかる)
 - Windows 11 だけで確かめた。Linux では `QT_QPA_FONTDIR`(offscreen のフォント)などの扱いを確かめていない
 - **モデリング(AI)**:
-  - 本物の API では試していない(試験は HTTP の層の模擬だけ)。本物の API の試験は §4 のコマンドで動く
+  - 本作業の試験はHTTPの模擬。以前の版ではユーザーがAnthropic形式とResponses APIの実動を確認済み。Chat Completionsと互換サーバーの実動は未確認。本物のAPIの試験は§4の明示指定で動く
   - OpenAI の Responses API は、関数のツール(MCP のツール)だけを使う。OpenAI のサーバー側のツール(Web 検索など)、
     `previous_response_id` と Conversations API、バックグラウンドの実行、推論の要約の既定の要求(推論のモデルでないと 400 に
     なるので、追加の引数で頼む)は使わない。Chat Completions で GPT-6 Sol・GPT-6 Luna のツールを使うときは、追加の引数に

@@ -1,7 +1,7 @@
 """``gsis-gui`` の起動。
 
-    uv run --project python --extra gui gsis-gui [--theme system|light|dark] [--case FILE.toml]
-                                                 [--results RUN_DIR] [--page case|mesh|ai|run|results]
+    uv run --project python --extra gui gsis-gui [--theme system|light|dark] [--project DIR]
+                                                 [--results RUN_DIR] [--page geometry|settings|ai|...]
                                                  [--solver EXE] [--offscreen] [--quit-after 秒]
 
 ``--offscreen`` は画面を出さずに動かす(Qt の offscreen プラットフォーム、3D は静止画の方式)。
@@ -16,12 +16,14 @@ from pathlib import Path
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="gsis-gui", description="GSIS-PBC の GUI(試作 v0.2)")
+    ap = argparse.ArgumentParser(prog="gsis-gui", description="GSIS-PBC の汎用アプリ(G1)")
+    ap.add_argument("--project", help="起動時に開くプロジェクトのフォルダか project.toml")
     ap.add_argument("--theme", choices=("system", "light", "dark"), default=None,
                     help="表示モード(既定は前回の選択、初回は system)")
     ap.add_argument("--case", help="起動時に開くケース定義(TOML)")
     ap.add_argument("--results", help="起動時に読み込む出力フォルダ")
-    ap.add_argument("--page", choices=("case", "mesh", "ai", "run", "results"), default=None, help="最初に出す画面")
+    ap.add_argument("--page", choices=("geometry", "settings", "boundaries", "mesh", "ai", "run", "results"),
+                    default=None, help="最初に出す画面(未完了の前段がある画面には進めない)")
     ap.add_argument("--solver", help="gsis-solver の実行ファイル(既定は build/release/src/gsis-solver.exe)")
     ap.add_argument("--offscreen", action="store_true", help="画面を出さずに動かす(確認用)")
     ap.add_argument("--quit-after", type=float, default=None, metavar="秒", help="指定した秒数で終わる(起動の確認用)")
@@ -67,11 +69,21 @@ def main(argv: list[str] | None = None) -> int:
     tm.apply()
     win = MainWindow(ctx)
     tm.apply()  # 画面を作った後にもう一度(各画面がテーマの通知を受ける)
+    if args.project:
+        win.open_project(Path(args.project))
+    legacy_case = None
     if args.case:
-        win.case_page.load_file(args.case)
+        # G3 の例題移行まで、旧ケースは独立した編集窓で開く。
+        from .pages.case_page import CasePage
+        legacy_case = CasePage(ctx)
+        legacy_case.setWindowTitle("旧ケースの編集 — GSIS-PBC")
+        legacy_case.resize(1300, 900)
+        legacy_case.load_file(args.case)
+        legacy_case.show()
     if args.results:
         win.results_page.load(Path(args.results))
-        win.show_page("results")
+        # 既存出力を明示して開く場合は独立したビューアとして見せる。
+        win.stack.setCurrentWidget(win.results_page)
     if args.page:
         win.show_page(args.page)
     win.show()

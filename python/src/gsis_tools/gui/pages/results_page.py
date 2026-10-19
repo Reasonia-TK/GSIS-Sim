@@ -63,6 +63,7 @@ from ..widgets.plots import PlotPanel
 from ..workers import JobRunner, start_task
 from .line_profile import LineProfileTab
 from .results_3d import View3DTab
+from .boundary_results import BoundaryResultsTab
 
 FIG_FILTER = "PNG 画像 (*.png);;SVG (*.svg);;PDF (*.pdf)"
 
@@ -90,12 +91,14 @@ class ResultsPage(QWidget):
     """結果の画面。"""
 
     status = Signal(str)
+    loaded = Signal(str)
 
     def __init__(self, ctx: AppContext, parent: QWidget | None = None, view_backend: str | None = None):
         super().__init__(parent)
         self.setObjectName("Page")
         self.ctx = ctx
         self.bundle: ResultBundle | None = None
+        self.project = None
         self.pinned: list[PinnedRun] = []
         self._busy = False
         self.runner = JobRunner(self)
@@ -144,6 +147,10 @@ class ResultsPage(QWidget):
         self.tabs.addTab(self.profile, "線上の分布")
         self.tabs.addTab(self._build_centerline(), "中心線(Fig.3)")
         self.tabs.addTab(self._build_table1(), "質量流量(Table 1)")
+        self.boundary_tab = BoundaryResultsTab(self.ctx, view_backend)
+        self.tabs.addTab(self.boundary_tab, "パッチ集計・壁面分布")
+        self.tabs.setTabVisible(2, False)
+        self.tabs.setTabVisible(3, False)
         self.history_plot = HistoryPlot()
         self.tabs.addTab(self.history_plot, "収束の履歴")
         self.summary_tree = QTreeWidget()
@@ -249,10 +256,38 @@ class ResultsPage(QWidget):
         return w
 
     # ------------------------------------------------------------------ 出力フォルダの一覧
+    def set_project(self, project):
+        self.project = project
+        self.runner.cancel_pending()
+        self.bundle = None
+        self.pinned = []
+        self.view3d.set_bundle(None)
+        self.profile.set_bundle(None)
+        self.boundary_tab.set_bundle(None)
+        self.tabs.setTabVisible(2, False)
+        self.tabs.setTabVisible(3, False)
+        self.summary_tree.clear()
+        self.history_plot.set_history(None)
+        self.run_combo.clear()
+        self.refresh_run_list()
+
+    def has_project_runs(self):
+        p = self.project or getattr(self.ctx, "project", None)
+        if not p or not p.directory:
+            return False
+        if discover_runs(p.directory / "runs", max_depth=1, limit=1):
+            return True
+        return bool(p.geometry.get("example") == "tube_vacuum" and
+                    discover_runs(self.ctx.root / "runs/kinetic", max_depth=2, limit=1))
+
     def refresh_run_list(self) -> None:
         current = self.run_combo.currentText()
-        runs = discover_runs(runs_dir(self.ctx.root), max_depth=4)
-        extra = [Path(p) for p in self.ctx.recent("run") if Path(p).is_dir()]
+        base = self.project.directory / "runs" if self.project is not None else runs_dir(self.ctx.root)
+        runs = discover_runs(base, max_depth=4)
+        extra = [] if self.project is not None else [Path(p) for p in self.ctx.recent("run") if Path(p).is_dir()]
+        if self.project is not None and self.project.geometry.get("example") == "tube_vacuum":
+            runs += discover_runs(self.ctx.root / "runs/kinetic", max_depth=2)
+            runs += discover_runs(self.ctx.root / "runs/gsis", max_depth=2)
         seen = set()
         with QSignalBlocker(self.run_combo):
             self.run_combo.clear()
@@ -308,6 +343,8 @@ class ResultsPage(QWidget):
         self.load_btn.setEnabled(True)
         self.bundle = b
         r = b.run
+        self.tabs.setTabVisible(2, r.is_tube_example)
+        self.tabs.setTabVisible(3, r.is_tube_example)
         self.ctx.add_recent("run", r.directory)
         parts = [f"{r.name}({r.kind_label})"]
         if r.delta is not None:
@@ -315,7 +352,7 @@ class ResultsPage(QWidget):
         if r.iterations is not None:
             parts.append(f"{r.iterations:,} 反復で" + ("収束" if r.converged else "止まった(収束していない)"))
         mf = r.mass_flow()
-        if "M_dot" in mf:
+        if "M_dot" in mf and r.is_tube_example:
             parts.append(f"Ṁ = {mf['M_dot']:.5f}(入口 {mf.get('M_dot_inlet', math.nan):.5f}、出口 {mf.get('M_dot_outlet', math.nan):.5f})")
         if r.wall_time_s is not None:
             parts.append(f"計算 {r.wall_time_s:.1f} 秒")
@@ -325,12 +362,15 @@ class ResultsPage(QWidget):
         self.runner.cancel_pending()  # 前の結果への計算の待ちは捨てる
         self.view3d.set_bundle(b)
         self.profile.set_bundle(b)
+        self.boundary_tab.set_bundle(b)
         self._fill_delta_combo()
-        self.update_centerline()
-        self.update_table1()
+        if r.is_tube_example:
+            self.update_centerline()
+            self.update_table1()
         self._fill_history()
         self._fill_summary()
         self.status.emit(f"結果を読み込みました: {display_path(r.directory, self.ctx.root)}")
+        self.loaded.emit(str(r.directory))
 
     # ------------------------------------------------------------------ 中心線
     def _fill_delta_combo(self) -> None:
@@ -591,7 +631,7 @@ class ResultsPage(QWidget):
         r = b.run
         nd_to_Mdot, scale = r.mdot_conversion()
         refs = []
-        row = next((x for x in self.table1 if paper_delta(r.delta) == x.delta_rp), None)
+        row = next((x for x in self.table1 if r.is_tube_example and paper_delta(r.delta) == x.delta_rp), None)
         if row is not None:
             refs.append((f"論文 GSIS-PBC {row.gsis_pbc_M:g}", row.gsis_pbc_M))
             if r.kind == "kinetic":
@@ -639,10 +679,13 @@ class ResultsPage(QWidget):
         self.history_plot.restyle(scheme)
         self.view3d.restyle(scheme)
         self.profile.restyle(scheme)
-        self.update_centerline()
+        if self.bundle is None or self.bundle.run.is_tube_example:
+            self.update_centerline()
         if self.bundle is not None:
-            self.update_table1()
+            if self.bundle.run.is_tube_example:
+                self.update_table1()
 
     def shutdown(self) -> None:
         self.runner.cancel_pending()
         self.view3d.shutdown()
+        self.boundary_tab.shutdown()

@@ -36,6 +36,13 @@ FIELD_INFO: dict[str, tuple[str, str, str, str | None]] = {
     "sigma": ("応力 σ", "Pa", "σ / p_in", "pressure"),
     "residual": ("残差", "", "residual", None),
     "residual_mass_nondim": ("質量の残差(無次元)", "", "residual_mass", None),
+    "mass_flux": ("質量流束", "kg/(m²·s)", "mass_flux", "mass_flux"),
+    "momentum_flux": ("運動量流束", "Pa", "momentum_flux / p_ref", "pressure"),
+    "normal_stress": ("法線応力", "Pa", "normal_stress / p_ref", "pressure"),
+    "shear_stress": ("せん断応力", "Pa", "shear_stress / p_ref", "pressure"),
+    "energy_flux": ("全エネルギー流束", "W/m²", "energy_flux", "heat_flux"),
+    "heat_flux_normal": ("法線方向の熱流束", "W/m²", "heat_flux_normal", "heat_flux"),
+    "face_T": ("境界温度", "K", "face_T / T0", "temperature"),
 }
 # 無次元の書き方・単位は 3D 表示の色の帯(VTK の文字)にも使うので、日本語を入れない(VTK の字体に字がない)
 FIELD_ORDER = ("p", "rho", "u", "U", "T", "Ma", "Kn_local", "q", "sigma", "residual", "residual_mass_nondim")
@@ -102,6 +109,7 @@ def scale_for(name: str, scales: Scales | None, nondim: bool, spec: "FieldSpec |
         ref = {
             "pressure": scales.pressure, "density": scales.density, "velocity2": math.sqrt(2.0) * scales.velocity,
             "temperature": scales.temperature, "heat_flux": scales.heat_flux,
+            "mass_flux": scales.mass_flux,
         }[kind]
         return 1.0 / ref, f"{symbol} / {rest}" if rest else symbol
     if kind is None:
@@ -165,6 +173,7 @@ class ResultBundle:
     # 別スレッドの処理で作って覚えておくもの
     point_grid: Any = None  # セル値を点へ補間した格子(流線・線上の分布)
     stream_cache: dict = field(default_factory=dict)
+    patch_totals: list[dict] = field(default_factory=list)
 
     @property
     def bounds(self) -> tuple[float, ...] | None:
@@ -210,10 +219,13 @@ def load_bundle(directory: str | Path, root: Path | None = None, *, with_grid: b
             b.boundary = pv.read(run.boundary_vtu)
         except Exception as exc:
             b.errors.append(f"boundary.vtu を読めません: {exc}")
-    try:
-        compute_centerline(b, r_max=r_max, x_offset=x_offset)
-    except Exception as exc:
-        b.errors.append(f"中心線を作れません: {exc}")
+    if run.is_tube_example:
+        try:
+            compute_centerline(b, r_max=r_max, x_offset=x_offset)
+        except Exception as exc:
+            b.errors.append(f"中心線を作れません: {exc}")
+    from .patch_results import patch_rows
+    b.patch_totals = patch_rows(run, b.boundary)
     if run.history_path is not None:
         try:
             b.history = read_history(run.history_path)
@@ -507,8 +519,9 @@ def profile_scale(key: str, scales: Scales | None, nondim: bool) -> tuple[float,
 
 
 _ASCII_REF = {"pressure": "p_in", "density": "rho_in", "velocity2": "sqrt(2RT0)", "temperature": "T0",
-              "heat_flux": "(p_in*sqrt(RT0))"}
-_ASCII_UNIT = {"Pa": "Pa", "kg/m³": "kg/m3", "m/s": "m/s", "K": "K", "W/m²": "W/m2"}
+              "heat_flux": "(p_in*sqrt(RT0))", "mass_flux": "(rho_ref*sqrt(RT0))"}
+_ASCII_UNIT = {"Pa": "Pa", "kg/m³": "kg/m3", "m/s": "m/s", "K": "K", "W/m²": "W/m2",
+               "kg/(m²·s)": "kg/(m2*s)"}
 
 
 def csv_column_name(key: str, scales: Scales | None, nondim: bool) -> str:
@@ -522,7 +535,8 @@ def csv_column_name(key: str, scales: Scales | None, nondim: bool) -> str:
     return f"{key}[{_ASCII_UNIT.get(unit_si, unit_si)}]"
 
 
-def write_profile_csv(path: str | Path, prof: LineProfile, scales: Scales | None, nondim: bool) -> Path:
+def write_profile_csv(path: str | Path, prof: LineProfile, scales: Scales | None, nondim: bool, *,
+                      inlet_reference: bool = True) -> Path:
     """線上の分布を CSV に書く(列: s は点 A からの距離、x, y, z は座標。どれも L_ref 単位。値は無次元か SI。
     領域の外の点は空欄)。"""
     path = Path(path)
@@ -531,7 +545,10 @@ def write_profile_csv(path: str | Path, prof: LineProfile, scales: Scales | None
     cols = [prof.s, prof.points[:, 0], prof.points[:, 1], prof.points[:, 2]]
     for k in keys:
         f, _label = profile_scale(k, scales, nondim)
-        heads.append(csv_column_name(k, scales, nondim))
+        name = csv_column_name(k, scales, nondim)
+        if not inlet_reference:
+            name = name.replace("p_in", "p_ref").replace("rho_in", "rho_ref")
+        heads.append(name)
         cols.append(prof.values[k] * f)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(",".join(heads) + "\n")
@@ -621,6 +638,8 @@ def build_vis(bundle: ResultBundle, req: VisRequest) -> VisResult:
     if spec is None:
         raise ValueError(f"場 {req.field} がありません")
     factor, res.label = scale_for(spec.name, scales, req.nondim, spec, req.comp)
+    if not bundle.run.is_tube_example:
+        res.label = res.label.replace("p_in", "p_ref").replace("ρ_in", "ρ_ref")
     allv = component_values(g, spec.name, req.comp) * factor
     res.stats = (float(np.nanmin(allv)), float(np.nanmax(allv)))
     shown: list[np.ndarray] = []

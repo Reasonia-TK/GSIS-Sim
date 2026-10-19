@@ -82,6 +82,19 @@ class RunResult:
     notes: list[str] = field(default_factory=list)
 
     @property
+    def is_tube_example(self) -> bool:
+        marker = self.directory / "gui_run.json"
+        if marker.is_file():
+            try:
+                return read_json(marker).get("example") == "tube_vacuum"
+            except (OSError, ValueError):
+                return False
+        if self.case is not None:
+            from .casefile import is_tube_case
+            return is_tube_case(self.case, self.case_path.parent if self.case_path else None)
+        return False
+
+    @property
     def name(self) -> str:
         return str(self.summary.get("case") or (self.case.name if self.case else self.directory.name))
 
@@ -140,7 +153,7 @@ class RunResult:
     def mdot_conversion(self) -> tuple[float | None, float | None]:
         """履歴の質量流量を Ṁ に直す係数 (無次元 → Ṁ, Ṁ の基準 [kg/s])。管ケース(delta_rp)でなければ (None, None)。"""
         if self.derived is not None:
-            if self.derived.has_p_in:
+            if self.derived.has_p_in or self.is_tube_example:
                 return self.derived.nd_to_Mdot, self.derived.mass_flow_scale
             return None, None
         mf = self.summary.get("mass_flow")
@@ -157,7 +170,14 @@ class RunResult:
         """メッシュのパッチの並び(boundary.vtu の patch_id の順)。"""
         names = [str(p.get("name")) for p in self.patches() if isinstance(p, dict)]
         if not names and self.case is not None:
-            names = [b.patch for b in self.case.boundaries]
+            # VTU の ID はメッシュ順。TOML の境界の記述順とは限らない。
+            try:
+                from ..pmesh import read_header
+                from .casefile import resolve_mesh
+                names = [str(p["name"]) for p in read_header(resolve_mesh(self.case.mesh, self.case_path.parent))["patches"]]
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                if self.boundary_vtu is None:
+                    names = [b.patch for b in self.case.boundaries]
         return names
 
     def patch_types(self) -> dict[str, str]:
@@ -174,6 +194,8 @@ class RunResult:
 
 
 def _find_case(summary: dict, directory: Path, root: Path) -> Path | None:
+    if (directory / "case.toml").is_file():
+        return (directory / "case.toml").resolve()
     cf = summary.get("case_file")
     if not isinstance(cf, str) or not cf:
         return None
