@@ -1,6 +1,6 @@
 # 進捗ボード
 
-- 最終更新: 2026-10-18(フェーズ 8 を始めたとき)
+- 最終更新: 2026-10-20(フェーズ 8 の S1〜S4・G3b・G3c が終わり、S5 がメモリ不足で途中停止したとき)
 - 自動再開: 30 分ごとの定期ジョブは、自動で進める作業がなくなったので止めた(2026-10-18。GUI の作業のあいだだけ作り直し、終わって再び止めた)。次に長い作業を始めるときに作り直す
 - 用途: 作業の現状と次の手順。5 時間の利用上限で作業が止まった後は、このファイルから再開する(§4)。統括役(メインのエージェント)が更新する。
 
@@ -56,6 +56,10 @@
 3l. (済、2026-10-18)本物の API で AI モデリングを 1 回通す試験(`docs/gui.md`、`python/tests/test_gui_ai_live.py`)。ユーザーが自分の端末で流し、「api通ったみたい」と報告。Anthropic 形式と、OpenAI 形式の Responses API(`openai-responses`、公式の接続先、`store: false`)が通った。Chat Completions API(`openai-chat`)と互換サーバーは本物の API では未確認
 3m. (2026-10-18)Claude Code に Codex のプラグイン(`codex@openai-codex`)を入れた。Codex の本体は既存の `C:\Users\TK\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`(0.162.1)を使う(npm では入れない。ユーザーの指示)。起動したままの Claude Code では PATH にこの場所がなく、`/codex:setup` は ready: false(PATH に足すと ready: true、ログイン済み)。Claude Code を起動し直した後、`/codex:setup` が ready: true になることを確かめた。あわせて、引き継ぎのスキル `handover`(全プロジェクト共通、`C:\Users\TK\.claude\skills\handover\`)を作った。引き継ぎ書は `.handover/<日時>.md` に置き、git には入れない(`.git/info/exclude`)
 3n. (2026-10-18 開始)**フェーズ 8: 汎用の希薄気体シミュレーションアプリ**(設計 `docs/design_general_app.md`、担当 `CLAUDE.md`)。コードは Codex(gpt-6.1-sol、high)。G1・G2・G3a は完了(2026-10-19。報告書 `docs/phase8_g1_report.md`・`g2`・`g3a`、統括役が Python の試験をやり直して 366 件通過・2 件 SKIP)。S1(四面体の頑健性)は実行中。次は S2 → S3・S4(RAM への退避の検討)→ G3b(`check-case --json`・新しい境界条件・nsf・STOP・熱流量と力のキーの接続)。G3 は、ソルバーに頼らない G3a と、S2・S3 の後の G3b に分けた。気体のプリセット Ne・Ar・Kr・Xe は Bird (1994) 表 A1 の値を統括役が記憶から渡したもので、一次資料との照合が要る。Codex の起動は `codex exec --ignore-user-config -C C:/Works/20261015_GSIS-PBC -m gpt-6.1-sol -c model_reasoning_effort=high -s workspace-write -c approval_policy=never -c windows.sandbox=elevated -o <結果> - < <依頼文>`(ユーザーの設定を読むと、サンドボックスの準備が `node_repl.exe` の使用中で失敗する。この形はユーザーが許可の規則に足した)
+3o. (2026-10-20)フェーズ 8 の続き。S1(四面体)は不合格: CIS 単独は六面体と 1% 以内だが、GSIS は δ=1 で補正後の入口流量が 18〜30% ずれ、δ=10 は未収束(`docs/phase8_s1_report.md`)。S2(`check-case --json`・速度格子の自動・パッチごとの SI 出力・STOP・NSF・保存性の診断)、S3(Maxwell の壁・質量流量入口・ref1d の α)、G3b・G3c(GUI の接続、四面体の既定は CIS+正値性+CFL5)、S4(RAM への退避の検討書 `docs/design_host_offload.md`)が完了。commit `557ae2c`・`ceb9de9`・`f1eb944`・`3bb7458`・`5f6593e`(push はしていない。push は改めてユーザーに確認)。ctest 174/174、Python 418 件通過・2 件 SKIP。`build/release` を作り直した。
+   - ユーザーの判断(2026-10-20): S4 は「いまは実装しない」。Ansys は使えない。方針は **GSIS は六面体、四面体は CIS 単独**(gmsh の押し出し・回転・掃引・ブロック分割で六面体を作る)。
+   - 途中停止: S5(2026-10-20 22:01、Claude Code がメモリ不足で停止。32 件の計算結果は `runs/phase8/s5/`、メッシュは `cases/general/hex_curved/`(未 commit)。報告書は未作成。再開はユーザーの指示を待つ。曲がった管・歪ませた管の六面体で GSIS が CIS 単独と合うか、GSIS を許すメッシュ品質の条件。依頼文 `runs/phase8/prompts/s5_full.md`、結果 `s5_out.md`、報告書 `docs/phase8_s5_report.md`)。次は G4(メッシュの画面と AI モデリングで六面体を作る、品質で GSIS を許すか警告)
+   - Codex は 1 本ずつ流す(RAM の空きが 4〜5 GB のことがあり、2 本並べたら Claude Code に止められた)。Codex のサンドボックスの中で gmsh(FLTK)が根に文字化けしたフォルダ(`fltk.org/fltk.prefs`)を作ることがある(通常の環境では起きない)
 4. (済)Codex の修正結果の確認。コミットと push はユーザーの返事を待つ
 5. (済)DSMC `d10_q` の後処理。感度計算は見送り
 6. フェーズ 4(GSIS の結合)→ 5(管ケースの再現)→ 6(GUI)→ 7(AI モデリング用 MCP)
