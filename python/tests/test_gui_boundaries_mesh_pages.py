@@ -67,7 +67,8 @@ def test_gui_to_solver_and_reopen(window, tmp_path, shape):
     assert "VRAM" in mp.memory.text()
     assert "セル数" in mp.quality.text()
     assert win.show_page("run")
-    solver = Path(__file__).resolve().parents[2] / "build/release/src/gsis-solver.exe"
+    from gsis_tools.gui.paths import default_solver
+    solver = default_solver()
     cp = subprocess.run([str(solver), "check-case", str(win.project.asset("case.toml"))], capture_output=True, timeout=30)
     assert cp.returncode == 0, (cp.stdout + cp.stderr).decode("utf-8", errors="replace")
     assert win.save(tmp_path / "copy")
@@ -135,8 +136,9 @@ def test_gui_vram_blocks_execution_and_can_stop(window, tmp_path):
     mp = win.mesh_page
     assert mp.generate()
     assert wait(app, lambda: not mp.busy, timeout=60)
-    assert mp.result and not win.project.mesh.get("validated")
-    assert win.project.stages["mesh"] == "pending"
+    assert mp.result and win.project.mesh.get("validated")
+    assert win.project.stages["mesh"] == "done"
+    assert wait(app, lambda: getattr(win.project, "_solver_check", {}).get("mesh_loaded"))
     assert not win.show_page("run")
     assert "予算超過" in mp.memory.text()
     original = win.project.asset(win.project.mesh["path"]).read_bytes()

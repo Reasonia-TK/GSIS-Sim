@@ -73,7 +73,8 @@ class GeneralSettings:
         """G2 から温度・圧力・速度の既定を更新する窓口(値は SI)。"""
         temps = [float(b["temperature"]) for b in boundaries if b.get("temperature") is not None]
         pressures = [float(b["pressure"]) for b in boundaries if b.get("pressure") is not None and b["pressure"] > 0]
-        vectors = [b.get("velocity") or b.get("tangential_velocity") for b in boundaries]
+        # 接線速度は zero/extrapolate の選択であり、速度ベクトルではない(C++ と同じ)。
+        vectors = [b.get("velocity") for b in boundaries]
         speeds = [math.sqrt(sum(float(v) ** 2 for v in u)) for u in vectors if isinstance(u, (list, tuple))]
         if temps:
             self.T_min, self.T_max = min(temps), max(temps)
@@ -98,20 +99,22 @@ def velocity_grid(s: GeneralSettings) -> tuple[list[int], list[list[float]]]:
 
 def estimate_vram(n_cells: int, n_velocity: int, *, chunk: int = 0, free_bytes: int = int(14.7 * 2**30),
                   mode: str = "gsis") -> dict[str, Any]:
-    """FP32 の f + 4 本のチャンク作業領域 + 暫定固定費。空きから 1 GB を残す。
+    """FP32 の f + 4 本のチャンク作業領域 + 暫定固定費。空きから 1 GiB を残す。
 
-    固定費はメッシュ未生成時の保守的な 0.1 GB。S2 と照合するまでは概算として扱う。
+    固定費は一律 0.1 GB の概算であり、安全側とは限らない。確定見積もりは C++ の memory を使う。
     """
     if n_cells < 1 or n_velocity < 1 or chunk < 0 or free_bytes <= 0:
         raise ValueError("メモリ見積もりの入力が範囲外です")
     overhead = 100_000_000
-    reserve = 1_000_000_000
+    reserve = 2**30
     budget = max(0, free_bytes - reserve)
     f = 0 if mode == "nsf" else n_cells * n_velocity * 4
     per_chunk = n_cells * 16
     automatic = max(0, (budget - f - overhead) // per_chunk)
     width = 0 if mode == "nsf" else min(n_velocity, chunk if chunk else automatic)
     work = width * per_chunk
+    if mode == "nsf":
+        overhead = 0
     total = f + work + overhead
     fits = total <= budget and (mode == "nsf" or width >= 1)
     return dict(distribution=f, workspace=work, overhead=overhead, reserve=reserve, budget=budget,

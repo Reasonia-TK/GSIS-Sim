@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHB
                                QScrollArea, QSpinBox, QTableWidget, QVBoxLayout, QWidget)
 
 from ..casefile import KNOWN_MODULE_KEYS
+from ..boundaries import boundary_notes
+from ..check_case import CheckCasePanel, TET_WARNING
 from ..general_settings import GASES, GeneralSettings, derived
 from ..widgets.common import FloatField, KeyValueTable, StatusLabel, heading, muted, primary_button, readonly_item
 
@@ -104,6 +106,10 @@ class SettingsPage(QWidget):
         right.addWidget(self.derived_table)
         self.note = StatusLabel("")
         right.addWidget(self.note)
+        self.check_panel = CheckCasePanel()
+        self.boundary_note = StatusLabel()
+        right.addWidget(self.boundary_note)
+        right.addWidget(self.check_panel, 1)
         self.accept_btn = primary_button("設定を確定して境界条件へ")
         right.addWidget(self.accept_btn)
         self.accept_btn.clicked.connect(self.accepted)
@@ -135,7 +141,7 @@ class SettingsPage(QWidget):
             w.setValue(getattr(s, key))
         self.length_auto.setChecked(s.length_auto)
         self.velocity_auto.setChecked(s.velocity_auto)
-        self.kinetic_table.set_values(s.kinetic)
+        self.kinetic_table.set_values({k: v for k, v in s.kinetic.items() if k != "precision"})
         self.macro_table.set_values(s.macro)
         for i in range(3):
             self.vel_n[i].setValue(s.vel_n[i])
@@ -158,6 +164,9 @@ class SettingsPage(QWidget):
             if problems:
                 raise ValueError("・".join(problems))
         values["kinetic"] = self.kinetic_table.values()
+        if "precision" in self._base.kinetic:
+            # 精度の選択は実行画面。読み込んだケースの値は編集対象外でも保持する。
+            values["kinetic"]["precision"] = self._base.kinetic["precision"]
         values["macro"] = self.macro_table.values()
         if not values["velocity_auto"] and any(not w.is_valid() for w in self.vel_lo + self.vel_hi):
             raise ValueError("速度格子の範囲の入力を確認してください")
@@ -194,6 +203,9 @@ class SettingsPage(QWidget):
                               "Ne・Ar・Kr・Xe: Bird (1994) 表 A1、273 K (VHS)。値は統括役の提供。")
         try:
             s = self.collect()
+            notes = boundary_notes(s, self.ctx.project.boundaries) if getattr(self.ctx, "project", None) else []
+            self.boundary_note.set_status("warning" if any("NSF" in n for n in notes) else "info", "\n".join(notes))
+            self.boundary_note.setVisible(bool(notes))
             d = derived(s)
             m = d["memory"]
             rows = [("R [J/(kg·K)]", f"{d['R']:.7g}"), ("μ(T0) [Pa·s]", f"{d['mu']:.7g}"),
@@ -208,10 +220,13 @@ class SettingsPage(QWidget):
                 for c, text in enumerate(pair):
                     self.derived_table.setItem(r, c, readonly_item(text))
             self.derived_table.resizeColumnToContents(0)
-            note = "入力に問題はありません。メッシュ生成前のセル数による概算です。ソルバーとの照合は G3 で行います。"
+            note = "Python の VRAM は概算です。固定費は暫定値。C++ の検査結果は下に表示します。"
             if not m["fits"]:
-                note = "VRAM の予算を超えています。セル数または速度点を減らしてください。実際のメッシュで再検査します。"
-            self.note.set_status("info" if m["fits"] else "warning", note)
+                note = "Python の VRAM 概算が予算を超えています。実際のメッシュを C++ で再検査します。"
+            tet_warning = s.mode == "gsis" and getattr(self.ctx, "project", None) and self.ctx.project.mesh.get("contains_tetrahedra")
+            if tet_warning:
+                note += " / " + TET_WARNING
+            self.note.set_status("warning" if not m["fits"] or tet_warning else "info", note)
             self.accept_btn.setEnabled(True)
         except (ValueError, OverflowError, TypeError) as exc:
             self.derived_table.setRowCount(0)

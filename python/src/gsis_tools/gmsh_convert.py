@@ -44,7 +44,8 @@ def gmsh_session(model_name: str = "gsis", *, verbosity: int = 1, threads: int |
     gmsh = _gmsh()
     owned = not gmsh.isInitialized()
     if owned:
-        gmsh.initialize(["-nopopup"], readConfigFiles=False)
+        # argv[0] はプログラム名。省くと -nopopup が読み飛ばされ FLTK が起動し得る。
+        gmsh.initialize(["gsis-tools", "-nopopup"], readConfigFiles=False)
         gmsh.option.setNumber("General.Terminal", 1 if verbosity > 0 else 0)
         gmsh.option.setNumber("General.Verbosity", verbosity)
         prev = None

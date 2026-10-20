@@ -26,9 +26,11 @@ from .paths import repo_root, to_posix_relative, tube_mesh_dir
 
 K_BOLTZMANN = 1.380649e-23  # J/K
 
-BOUNDARY_TYPES = ("diffuse_wall", "pressure_inlet", "pressure_outlet", "vacuum", "symmetry", "periodic_slab")
+BOUNDARY_TYPES = ("diffuse_wall", "maxwell_wall", "pressure_inlet", "mass_flow_inlet", "pressure_outlet", "vacuum", "symmetry", "periodic_slab")
 BOUNDARY_TYPE_LABELS = {
     "diffuse_wall": "拡散壁",
+    "maxwell_wall": "Maxwell 壁",
+    "mass_flow_inlet": "質量流量入口",
     "pressure_inlet": "圧力入口",
     "pressure_outlet": "圧力出口",
     "vacuum": "真空",
@@ -36,11 +38,13 @@ BOUNDARY_TYPE_LABELS = {
     "periodic_slab": "並進周期",
 }
 # 境界条件の種類ごとの値: 必須 / 任意(C++ の parse_boundary_array と同じ)
-BOUNDARY_REQUIRED = {"diffuse_wall": ("temperature",), "pressure_inlet": ("temperature",), "pressure_outlet": ("pressure",)}
-BOUNDARY_OPTIONAL = {"diffuse_wall": ("velocity",), "pressure_inlet": ("pressure",)}
+BOUNDARY_REQUIRED = {"diffuse_wall": ("temperature",), "pressure_inlet": ("temperature",), "pressure_outlet": ("pressure",),
+                     "maxwell_wall": ("temperature", "accommodation"), "mass_flow_inlet": ("temperature", "mass_flow")}
+BOUNDARY_OPTIONAL = {"diffuse_wall": ("velocity",), "maxwell_wall": ("velocity",),
+                     "pressure_inlet": ("pressure", "tangential_velocity"), "mass_flow_inlet": ("tangential_velocity",)}
 
 REFERENCE_KINDS = ("delta_rp", "Kn", "p_ref")
-MODES = ("gsis", "cis")
+MODES = ("gsis", "cis", "nsf")
 MODULE_SECTIONS = ("kinetic", "macro", "output")
 
 # [gsis] の既定値(C++ の GsisSection と同じ)
@@ -52,6 +56,7 @@ KNOWN_MODULE_KEYS: dict[str, dict[str, tuple[str, Any, str]]] = {
     "kinetic": {
         "pseudo_cfl": ("float", 0.0, "擬似時間刻みの CFL 数(0 で Δt = ∞)"),
         "pseudo_time": ("str", "global", "擬似時間刻みの形(global / velocity)"),
+        "positivity_limiter": ("bool", False, "面への再構成で正値性を制限する"),
         "limiter": ("str", "venkatakrishnan", "リミッタ(venkatakrishnan / none)"),
         "limiter_k": ("float", 3.0, "Venkatakrishnan の定数 K"),
         "limiter_eps": ("str", "relative", "ε² の決め方(relative / absolute)"),
@@ -121,10 +126,12 @@ class Boundary:
     temperature: float | None = None
     pressure: float | None = None
     velocity: tuple[float, float, float] | None = None
+    accommodation: float | None = None
+    mass_flow: float | None = None
+    tangential_velocity: str | None = None
 
     def copy(self) -> "Boundary":
-        return Boundary(self.patch, self.type, self.temperature, self.pressure,
-                        None if self.velocity is None else tuple(self.velocity))
+        return copy.deepcopy(self)
 
 
 def _default_boundaries() -> list[Boundary]:
@@ -156,6 +163,7 @@ class CaseModel:
     ref_value: float = 10.0
     boundaries: list[Boundary] = field(default_factory=_default_boundaries)
     vel_n: list[int] = field(default_factory=lambda: [30, 24, 24])
+    velocity_auto: bool = False
     vel_range: list[list[float]] = field(default_factory=lambda: [[-10.0, 10.0], [-8.0, 8.0], [-8.0, 8.0]])
     gsis: dict[str, float | int] = field(default_factory=dict)
     kinetic: dict[str, Any] = field(default_factory=dict)
@@ -259,10 +267,24 @@ def model_from_dict(root: dict) -> CaseModel:
                 temperature=_opt_num(b, "temperature", f"boundary[{i}]"),
                 pressure=_opt_num(b, "pressure", f"boundary[{i}]"),
                 velocity=vel,
+                accommodation=_opt_num(b, "accommodation", f"boundary[{i}]"),
+                mass_flow=_opt_num(b, "mass_flow", f"boundary[{i}]"),
+                tangential_velocity=b.get("tangential_velocity"),
             )
         )
     n = vg.get("n")
     rng = vg.get("range")
+    m.velocity_auto = vg.get("auto", False)
+    if type(m.velocity_auto) is not bool:
+        raise CaseFileError("velocity_grid.auto は真偽値です")
+    if m.velocity_auto:
+        if n is not None or rng is not None:
+            raise CaseFileError("velocity_grid.auto と n・range は併用できません")
+        from .general_settings import GeneralSettings, velocity_grid
+        s = GeneralSettings(molecular_mass=m.molecular_mass, T0=m.T0, T_min=m.T0, T_max=m.T0)
+        s.update_boundary_defaults(root.get("boundary", []))
+        s.T0 = m.T0
+        n, rng = velocity_grid(s)
     if not (isinstance(n, list) and len(n) == 3):
         raise CaseFileError("velocity_grid.n は 3 つの整数の配列です")
     if not (isinstance(rng, list) and len(rng) == 3 and all(isinstance(r, list) and len(r) == 2 for r in rng)):
@@ -388,10 +410,10 @@ def _boundary_table(t, b: Boundary) -> None:
     _set(t, "patch", b.patch)
     _set(t, "type", b.type)
     allowed = set(BOUNDARY_REQUIRED.get(b.type, ())) | set(BOUNDARY_OPTIONAL.get(b.type, ()))
-    for key in ("temperature", "pressure", "velocity"):
+    for key in ("temperature", "pressure", "velocity", "accommodation", "mass_flow", "tangential_velocity"):
         v = getattr(b, key)
         if key in allowed and v is not None:
-            _set(t, key, [float(x) for x in v] if key == "velocity" else float(v))
+            _set(t, key, [float(x) for x in v] if key == "velocity" else str(v) if key == "tangential_velocity" else float(v))
         else:
             _del(t, key)
 
@@ -456,8 +478,14 @@ def update_document(doc: tomlkit.TOMLDocument, m: CaseModel) -> tomlkit.TOMLDocu
         doc.add("boundary", aot)
 
     vg = _ensure_table(doc, "velocity_grid")
-    _set(vg, "n", [int(v) for v in m.vel_n])
-    _set(vg, "range", [[float(a), float(b)] for a, b in m.vel_range], _UNIT_COMMENTS.get(("velocity_grid", "range")))
+    if m.velocity_auto:
+        vg.pop("n", None)
+        vg.pop("range", None)
+        _set(vg, "auto", True)
+    else:
+        vg.pop("auto", None)
+        _set(vg, "n", [int(v) for v in m.vel_n])
+        _set(vg, "range", [[float(a), float(b)] for a, b in m.vel_range], _UNIT_COMMENTS.get(("velocity_grid", "range")))
 
     gsis_vals = {k: (int(v) if GSIS_TYPES[k] is int else float(v)) for k, v in m.gsis.items()}
     if gsis_vals or "gsis" in doc:
@@ -588,6 +616,14 @@ def validate(m: CaseModel) -> list[str]:
                 errs.append(f"{where}: pressure は正にしてください")
         if b.type == "pressure_inlet" and b.pressure is None and m.ref_kind != "delta_rp":
             errs.append(f"{where}: pressure を省略できるのは delta_rp を与えたときだけです")
+        if b.type == "maxwell_wall" and b.accommodation is not None and not (
+                math.isfinite(b.accommodation) and 0 < b.accommodation <= 1):
+            errs.append(f"{where}: 適応係数 α は 0 < α ≤ 1 にしてください")
+        if b.type == "mass_flow_inlet" and b.mass_flow is not None and not (
+                math.isfinite(b.mass_flow) and b.mass_flow > 0):
+            errs.append(f"{where}: mass_flow は有限の正の数にしてください")
+        if b.tangential_velocity is not None and b.tangential_velocity not in ("zero", "extrapolate"):
+            errs.append(f"{where}: 接線速度は extrapolate または zero にしてください")
     if len(m.vel_n) != 3 or any(int(n) < 1 for n in m.vel_n):
         errs.append("速度格子の点数は 1 以上にしてください")
     for a, (lo, hi) in enumerate(m.vel_range):

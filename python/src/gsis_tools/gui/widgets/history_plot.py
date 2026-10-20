@@ -18,7 +18,7 @@ def column_label(name: str) -> str:
 
 
 class HistoryPlot(QWidget):
-    """上: 収束(対数軸)、下: 質量流量。列は「描く列」のメニューで選ぶ。"""
+    """収束・質量流量と、S3 の入口があるときだけ圧力(Pa)を別の軸に描く。"""
 
     def __init__(self, parent: QWidget | None = None, toolbar: bool = True):
         super().__init__(parent)
@@ -108,8 +108,10 @@ class HistoryPlot(QWidget):
         t = theme.tokens(self.scheme)
         fig = self.panel.figure
         fig.clear()
-        ax1, ax2 = fig.subplots(2, 1, sharex=True)
         h = self.hist
+        pressure = h.inlet_pressure_columns() if h is not None else {}
+        axes = fig.subplots(3 if pressure else 2, 1, sharex=True)
+        ax1, ax2 = axes[:2]
         use_time = self.time_axis.isChecked()
         xlabel = "経過時間 [s]" if use_time else "反復"
         if h is None or h.n == 0:
@@ -168,6 +170,16 @@ class HistoryPlot(QWidget):
             ax2.legend(loc="best", fontsize=8, frameon=True)
         ax2.set_ylabel(ylabel)
         ax2.set_xlabel(xlabel)
+        if pressure:
+            ax3 = axes[2]
+            for i, (patch, column) in enumerate(pressure.items()):
+                y = h.column(column)
+                ok = np.isfinite(y) & np.isfinite(x)
+                ax3.plot(x[ok], y[ok], label=patch, color=colors[(i + 1) % len(colors)], linewidth=1.4)
+            ax2.set_xlabel("")
+            ax3.set_xlabel(xlabel)
+            ax3.set_ylabel("入口圧力 p_b [Pa]")
+            ax3.legend(loc="best", fontsize=8, frameon=True)
         # 右上の要約
         parts = [f"{h.n} 行"]
         it = h.last("iteration")
@@ -181,6 +193,10 @@ class HistoryPlot(QWidget):
         for s in series:
             if s.source == "main" and s.y.size and math.isfinite(s.y[-1]):
                 parts.append(f"{s.label} {s.y[-1]:.5g}")
+        for patch, column in pressure.items():
+            value = h.last(column)
+            if math.isfinite(value):
+                parts.append(f"{patch} p_b {value:.6g} Pa")
         mb = mass_balance(series)
         if math.isfinite(mb):
             parts.append(f"流入と流出の差 {mb:.1e}")

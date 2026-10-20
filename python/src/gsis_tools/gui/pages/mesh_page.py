@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QFormLayout, QHBoxLayout, QHeaderView, QLineEdit,
                                QTableWidget, QVBoxLayout, QWidget)
 
 from .. import theme
+from ..check_case import CheckCasePanel
 from ..general_mesh import generate_mesh, mesh_memory, validate_options
 from ..widgets.common import FloatField, StatusLabel, heading, muted, primary_button, readonly_item
 from ..widgets.vtk_view import Scene, SceneItem, VtkView
@@ -73,6 +74,9 @@ class MeshPage(QWidget):
         root.addWidget(self.areas)
         self.memory = StatusLabel()
         root.addWidget(self.memory)
+        self.check_panel = CheckCasePanel()
+        self.check_panel.setMaximumHeight(280)
+        root.addWidget(self.check_panel)
         self.generate_btn.clicked.connect(self.generate)
         self.stop_btn.clicked.connect(self.stop)
         ctx.theme.changed.connect(lambda *_: self.draw())
@@ -169,8 +173,6 @@ class MeshPage(QWidget):
                 from ...pmesh import read_header
                 cells = read_header(self.project.asset(self.project.mesh["path"]))["n_cells"]
                 memory = mesh_memory(self.project, cells)
-                if not memory["fits"]:
-                    raise ValueError("VRAM の予算を超えています")
                 result = dict(cells=cells)
                 self.project.mesh.update(result)
                 self.ready.emit(result)
@@ -199,6 +201,7 @@ class MeshPage(QWidget):
 
         def done(result):
             self._idle()
+            self.project.mesh.pop("contains_tetrahedra", None)
             self.project.mesh.update(result)
             self.project.settings.estimated_cells = result["cells"]
             self.present(result)
@@ -229,11 +232,12 @@ class MeshPage(QWidget):
 
     def present(self, result):
         self.result = result
+        source = "VRAM 確定見積もり(C++)" if getattr(self.project, "_solver_check", {}).get("memory") else "VRAM 概算(Python)"
         if self.project.geometry.get("source_kind") == "existing_mesh":
-            self.quality.set_status("ok", f"既存の六面体メッシュ: {result['cells']:,} セル")
+            self.quality.set_status("ok", f"既存メッシュ: {result['cells']:,} セル")
             memory = mesh_memory(self.project, result["cells"])
             self.memory.set_status("ok" if memory["fits"] else "warning",
-                f"VRAM 概算: {memory['total'] / 2**30:.3f} GiB / 予算 {memory['budget'] / 2**30:.3f} GiB")
+                f"{source}: {memory['total'] / 2**30:.3f} GiB / 予算 {memory['budget'] / 2**30:.3f} GiB")
             self.draw()
             return
         self.quality.set_status("ok", f"セル数: {result['cells']:,} / 非直交角 最大: {result['non_orthogonality']['max']:.4g}°"
@@ -244,10 +248,12 @@ class MeshPage(QWidget):
                                         f"{p['area_difference']:+.4g}", f"{p['relative_difference']:+.3%}")):
                 self.areas.setItem(r, c, readonly_item(value))
         memory = mesh_memory(self.project, result["cells"])
+        confirmed = source == "VRAM 確定見積もり(C++)"
         self.memory.set_status("ok" if memory["fits"] else "warning",
-            f"VRAM 概算(実セル数): {memory['total'] / 2**30:.3f} GiB / 予算 {memory['budget'] / 2**30:.3f} GiB"
+            f"{source}(実セル数): {memory['total'] / 2**30:.3f} GiB / 予算 {memory['budget'] / 2**30:.3f} GiB"
             f" / 速度チャンク {memory['chunk']}。" + ("実行へ進めます。" if memory["fits"] else
-            "予算超過のため実行へ進めません。セル数または速度点を減らしてください。"))
+            "予算超過です。C++ の検査結果を確認してください。" if not confirmed else
+            "GPU の予算超過です。セル数または速度点を減らすか、CPU を選んでください。"))
         if not memory["fits"]:
             self.note.set_status("warning", "品質の検査は済みましたが、VRAM の予算を超えています")
         elif self.project.mesh.get("validated") is not True:
@@ -280,7 +286,7 @@ class MeshPage(QWidget):
             items.append(SceneItem(mesh, color=color, show_edges=True, edge_color=self.ctx.theme.tokens()["border"]))
             legend.append((name, color))
         self.view.restyle(self.ctx.theme.scheme())
-        self.view.set_scene(Scene(items=items, legend=legend, caption="四面体メッシュの境界 [m]"))
+        self.view.set_scene(Scene(items=items, legend=legend, caption="メッシュの境界 [m]"))
 
     def shutdown(self):
         if self.busy:

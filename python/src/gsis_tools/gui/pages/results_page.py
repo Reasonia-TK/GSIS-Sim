@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
 
 from ..centerline import TUBE_LENGTH, TUBE_X_OFFSET, Centerline
 from ..context import AppContext
+from ..results import summary_warnings
 from ..fields import ResultBundle, compute_centerline, load_bundle
 from ..paths import display_path, runs_dir
 from ..reference import (
@@ -350,15 +351,17 @@ class ResultsPage(QWidget):
         if r.delta is not None:
             parts.append(f"δ = {r.delta:.6g}")
         if r.iterations is not None:
-            parts.append(f"{r.iterations:,} 反復で" + ("収束" if r.converged else "止まった(収束していない)"))
+            parts.append(f"{r.iterations:,} 反復で" + ("利用者が停止" if r.summary.get("stopped_by_user") else
+                         "収束" if r.converged else "止まった(収束していない)"))
         mf = r.mass_flow()
         if "M_dot" in mf and r.is_tube_example:
             parts.append(f"Ṁ = {mf['M_dot']:.5f}(入口 {mf.get('M_dot_inlet', math.nan):.5f}、出口 {mf.get('M_dot_outlet', math.nan):.5f})")
         if r.wall_time_s is not None:
             parts.append(f"計算 {r.wall_time_s:.1f} 秒")
         parts.append(f"読み込み {b.load_time:.1f} 秒")
-        notes = r.notes + b.errors
-        self.info.set_status("warning" if b.errors else "ok", "、".join(parts) + ("。注意: " + " / ".join(notes) if notes else ""))
+        diagnostics = summary_warnings(r.summary)
+        notes = r.notes + b.errors + diagnostics
+        self.info.set_status("warning" if b.errors or diagnostics else "ok", "、".join(parts) + ("。注意: " + " / ".join(notes) if notes else ""))
         self.runner.cancel_pending()  # 前の結果への計算の待ちは捨てる
         self.view3d.set_bundle(b)
         self.profile.set_bundle(b)

@@ -176,7 +176,8 @@ class ModelEngine:
             import gmsh
 
             if not gmsh.isInitialized():
-                gmsh.initialize(["-nopopup"], readConfigFiles=False, interruptible=False)
+                # argv[0] を省くと -nopopup が無視され、FLTK の設定保存が起こり得る。
+                gmsh.initialize(["gsis-tools", "-nopopup"], readConfigFiles=False, interruptible=False)
                 self._owns_gmsh = True
             gmsh.option.setNumber("General.Terminal", 0)
             gmsh.option.setNumber("General.Verbosity", 2)

@@ -37,8 +37,12 @@ class Project:
         if missing:
             return "先に「" + "・".join(missing) + "」を完了してください"
         if stage in ("run", "results") and self.mesh.get("cells"):
-            from .general_mesh import mesh_memory
-            if not mesh_memory(self, self.mesh["cells"])["fits"]:
+            checked = getattr(self, "_solver_check", None)
+            if checked is not None and not checked.get("ok"):
+                return "C++ の入力検査にエラーがあります。設定・メッシュの検査結果を確認してください"
+            if (checked and checked.get("mesh_loaded") and checked.get("memory")
+                    and self.settings.mode != "nsf" and self.settings.kinetic.get("backend", "cuda") != "cpu"
+                    and not checked["memory"]["fits"]):
                 return "VRAM の予算を超えています。セル数または速度点を減らしてください"
         return ""
 
@@ -50,6 +54,7 @@ class Project:
         # 古いメッシュは履歴用に残すが、再生成まで参照しない。
         if STAGES.index(stage) <= STAGES.index("mesh"):
             self.mesh.pop("validated", None)
+            self.__dict__.pop("_solver_check", None)
         self.dirty = True
 
     def complete(self, stage: str) -> None:
@@ -81,7 +86,7 @@ def case_document(project: Project) -> tomlkit.TOMLDocument:
     doc["case"] = dict(name=project.name, mesh=project.mesh.get("path", "mesh/fluid.pmesh"), mode=s.mode)
     doc["gas"] = {k: getattr(s, k) for k in ("molecular_mass", "mu_ref", "T_ref", "omega")}
     doc["conditions"] = dict(L_ref=s.L_ref, T0=s.T0, p_ref=s.p_ref)
-    doc["velocity_grid"] = dict(n=n, range=ranges)
+    doc["velocity_grid"] = dict(auto=True) if s.velocity_auto else dict(n=n, range=ranges)
     doc["gsis"] = {**s.gsis_extra, **{k: getattr(s, k) for k in ("n_cis", "max_pbc", "cfl_pbc", "tolerance")}}
     doc["kinetic"] = {**s.kinetic, "velocity_chunk": s.velocity_chunk}
     if s.macro:

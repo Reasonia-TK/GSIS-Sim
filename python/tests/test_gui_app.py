@@ -109,12 +109,12 @@ def test_run_page_command_and_missing_subcommand(gui, tmp_path):
     rp.set_case(ROOT / "cases/smoke/smoke.toml")
     app.processEvents()
     assert rp.case_model is not None and rp.case_model.name == "smoke_box"
-    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
+    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("run"))
     rp.out_field.setText(str(tmp_path / "out"))
     rp.maxit_check.setChecked(True)
     rp.maxit_spin.setValue(4)
     cmd, skipped = rp.command()
-    assert cmd[1:3] == ["cis-run", str(ROOT / "cases/smoke/smoke.toml")]
+    assert cmd[1:3] == ["run", str(ROOT / "cases/smoke/smoke.toml")]
     assert "--out" in cmd and "--max-iter" in cmd and skipped == []
     if HAS_SOLVER and "run" not in ctx.subcommands():
         rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("run"))
@@ -127,11 +127,17 @@ def test_run_page_command_and_missing_subcommand(gui, tmp_path):
 
 @pytest.mark.skipif(not HAS_SOLVER, reason="gsis-solver がビルドされていない")
 def test_run_page_runs_pbc_smoke(gui, tmp_path):
-    """pbc-run(CPU)を smoke ケースで数反復だけ実行し、ログと history.csv を追う。"""
+    """run の NSF(CPU)を数反復だけ実行し、ログと history.csv を追う。"""
     app, ctx, win = gui
     rp = win.run_page
-    rp.set_case(ROOT / "cases/smoke/smoke.toml")
-    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("pbc-run"))
+    import tomlkit
+    doc = tomlkit.parse((ROOT / "cases/smoke/smoke.toml").read_text(encoding="utf-8"))
+    doc["case"]["mode"] = "nsf"
+    doc["case"]["mesh"] = str(ROOT / "cases/smoke/box.pmesh")
+    path = tmp_path / "nsf.toml"
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    rp.set_case(path)
+    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("run"))
     out = tmp_path / "pbc"
     rp.out_field.setText(str(out))
     rp.maxit_check.setChecked(True)
@@ -154,19 +160,21 @@ def test_run_page_stop(gui, tmp_path):
     app, ctx, win = gui
     rp = win.run_page
     rp.set_case(ROOT / "cases/smoke/smoke.toml")
-    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("cis-run"))
+    rp.sub_combo.setCurrentIndex(rp.sub_combo.findData("run"))
     rp.out_field.setText(str(tmp_path / "stop"))
     rp.maxit_check.setChecked(True)
     rp.maxit_spin.setValue(100000)
     rp.backend_combo.setCurrentIndex(rp.backend_combo.findData("cpu"))
+    rp.extra_edit.setText("--mode cis")
     assert rp.start()
     assert wait_until(app, lambda: rp.tail is not None and rp.tail.n_rows >= 3, 120)
     assert rp.stop_btn.isEnabled() and not rp.run_btn.isEnabled()
     rp.stop()
     assert wait_until(app, lambda: rp.proc is None, 60)
-    assert "停止しました" in rp.state.text()
+    assert "利用者が停止" in rp.state.text()
     assert rp.run_btn.isEnabled() and not rp.stop_btn.isEnabled()
     rp.backend_combo.setCurrentIndex(0)
+    rp.extra_edit.clear()
 
 
 

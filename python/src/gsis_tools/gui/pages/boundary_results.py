@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QHeaderView,
                                QTableWidget, QVBoxLayout, QWidget)
 
 from ..fields import SHOW, component_values, components, list_fields, scale_for
-from ..patch_results import COLUMNS, HEADERS, MISSING, export_patch_csv
+from ..patch_results import (COLUMNS, HEADERS, INLET_COLUMNS, INLET_HEADERS, MISSING,
+                             export_patch_csv, mass_flow_inlet_rows)
 from ..widgets.common import StatusLabel, muted, readonly_item
 from ..widgets.vtk_view import Scene, SceneItem, VtkView
 
@@ -18,8 +19,15 @@ class BoundaryResultsTab(QWidget):
         super().__init__()
         self.ctx, self.bundle = ctx, None
         layout = QVBoxLayout(self)
-        layout.addWidget(muted("質量・熱は領域から外向きを正とします。力は壁が受ける力です。"
-            "開口の運動量輸送と全エネルギー流束は、壁の力・熱流量に置き換えません。"))
+        self.inlet_table = QTableWidget(0, len(INLET_COLUMNS))
+        self.inlet_table.setHorizontalHeaderLabels(INLET_HEADERS)
+        self.inlet_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.inlet_table.setMaximumHeight(135)
+        self.inlet_note = StatusLabel()
+        layout.addWidget(self.inlet_note)
+        layout.addWidget(self.inlet_table)
+        layout.addWidget(muted("S2 の質量・局所熱・全エネルギーは流入が正。力は気体がパッチに及ぼす力(開口では運動量輸送)。"
+            "旧出力は外向き正で表示します。熱は局所気体系の q、全エネルギーは移流と仕事を含みます。"))
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(HEADERS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -45,6 +53,23 @@ class BoundaryResultsTab(QWidget):
 
     def set_bundle(self, bundle):
         self.bundle = bundle
+        inlets = mass_flow_inlet_rows(bundle.run.summary) if bundle else []
+        self.inlet_table.setVisible(bool(inlets))
+        self.inlet_note.setVisible(bool(inlets))
+        self.inlet_table.setRowCount(len(inlets))
+        warning = False
+        for r, row in enumerate(inlets):
+            error = row["mass_flow_relative_error"]
+            warning |= error is None or error > .001
+            for c, key in enumerate(INLET_COLUMNS):
+                value = row[key]
+                if key == "mass_flow_relative_error" and value is not None:
+                    value *= 100
+                self.inlet_table.setItem(r, c, readonly_item(MISSING if value is None else
+                    f"{value:.6g}" if isinstance(value, float) else str(value)))
+        self.inlet_note.set_status("warning" if warning else "ok", "質量流量入口: " +
+            ("目標との相対誤差が 0.1% を超えるか未確認です。未収束・停止時の値を確認してください" if warning else
+             "全入口が目標の 0.1% 以内です。全体の保存性診断も確認してください"))
         rows = bundle.patch_totals if bundle else []
         self.table.setRowCount(len(rows))
         for r, row in enumerate(rows):

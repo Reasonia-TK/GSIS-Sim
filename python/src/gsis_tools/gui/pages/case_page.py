@@ -80,7 +80,8 @@ class BoundaryTable(QWidget):
 
     changed = Signal()
 
-    COLS = ("パッチ", "種類", "温度 [K]", "圧力 [Pa]", "壁速度 [m/s](x, y, z)")
+    COLS = ("パッチ", "種類", "温度 [K]", "圧力 [Pa]", "壁速度 [m/s](x, y, z)",
+            "適応係数 α", "目標流量 [kg/s]", "接線速度(zero / extrapolate)")
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -109,7 +110,7 @@ class BoundaryTable(QWidget):
         lay.addLayout(row)
         self.add_btn.clicked.connect(lambda: (self._append(Boundary("", "diffuse_wall", 273.15)), self.changed.emit()))
         self.del_btn.clicked.connect(self._remove_selected)
-        self.hint = muted("温度・圧力は空欄なら書かない(圧力入口の圧力は省略すると p_in)。灰色の欄はその種類では使わない。")
+        self.hint = muted("温度・圧力は空欄なら書かない(圧力入口の圧力は省略すると p_in)。質量流量は流入正、入口の初期 p_b は p_ref。灰色の欄は使いません。")
         lay.addWidget(self.hint)
 
     def _append(self, b: Boundary) -> None:
@@ -128,6 +129,9 @@ class BoundaryTable(QWidget):
             self.table.setItem(r, 3, QTableWidgetItem("" if b.pressure is None else repr(b.pressure)))
             vel = "" if b.velocity is None else ", ".join(repr(float(v)) for v in b.velocity)
             self.table.setItem(r, 4, QTableWidgetItem(vel))
+            for col, key in ((5, "accommodation"), (6, "mass_flow"), (7, "tangential_velocity")):
+                value = getattr(b, key)
+                self.table.setItem(r, col, QTableWidgetItem("" if value is None else str(value)))
         self._update_enabled(r)
 
     def _row_of(self, combo: QComboBox) -> int:
@@ -139,6 +143,8 @@ class BoundaryTable(QWidget):
     def _on_type_changed(self, combo: QComboBox) -> None:
         r = self._row_of(combo)
         if r >= 0:
+            if combo.currentData() == "maxwell_wall" and not self.table.item(r, 5).text():
+                self.table.item(r, 5).setText("1")
             self._update_enabled(r)
         self.changed.emit()
 
@@ -146,7 +152,8 @@ class BoundaryTable(QWidget):
         t = self.table.cellWidget(r, 1).currentData()
         allowed = set(BOUNDARY_REQUIRED.get(t, ())) | set(BOUNDARY_OPTIONAL.get(t, ()))
         with QSignalBlocker(self.table):
-            for col, key in ((2, "temperature"), (3, "pressure"), (4, "velocity")):
+            for col, key in ((2, "temperature"), (3, "pressure"), (4, "velocity"),
+                             (5, "accommodation"), (6, "mass_flow"), (7, "tangential_velocity")):
                 it = self.table.item(r, col)
                 flags = it.flags()
                 if key in allowed:
@@ -197,7 +204,9 @@ class BoundaryTable(QWidget):
                     raise ValueError(f"境界条件 {patch or r + 1} の壁速度が数値ではありません: {vs}") from None
                 if len(vel) != 3:
                     raise ValueError(f"境界条件 {patch or r + 1} の壁速度は 3 成分です: {vs}")
-            out.append(Boundary(patch, t, num(2, "temperature"), num(3, "pressure"), vel))
+            tv = self.table.item(r, 7).text().strip() if "tangential_velocity" in allowed else ""
+            out.append(Boundary(patch, t, num(2, "temperature"), num(3, "pressure"), vel,
+                                num(5, "accommodation"), num(6, "mass_flow"), tv or None))
         return out
 
 

@@ -182,6 +182,10 @@ class History:
                 return self.data[k]
         return None
 
+    def inlet_pressure_columns(self) -> dict[str, str]:
+        """S3 の入口圧力(Pa)。パッチ名に _ や - があっても全体を保つ。"""
+        return {c[4:-3]: c for c in self.columns if c.startswith("p_b_") and c.endswith("_Pa") and c[4:-3]}
+
     def last(self, name: str) -> float:
         """列の最後の有限な値(なければ nan)。"""
         if name not in self.data:

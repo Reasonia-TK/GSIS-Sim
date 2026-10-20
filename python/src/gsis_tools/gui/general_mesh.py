@@ -37,10 +37,33 @@ def validate_options(options, boundaries):
 
 
 def mesh_memory(project, cells):
+    checked = getattr(project, "_solver_check", {})
+    if checked.get("mesh_loaded") and checked.get("memory"):
+        return checked["memory"]
     s = project.settings
     n, _ = velocity_grid(s)
     return estimate_vram(cells, math.prod(n), chunk=s.velocity_chunk,
                          free_bytes=int(s.free_vram_gib * 2**30), mode=s.mode)
+
+
+def apply_tetrahedron_defaults(project):
+    """四面体を初めて確認した時だけ安全側の既定値を採用する。以後の明示選択は保持する。"""
+    if not project.mesh.get("cells"):
+        return False
+    if "contains_tetrahedra" not in project.mesh:
+        from ..pmesh import read_pmesh
+        from ..topology import classify_cells, CELL_TET
+        mesh = read_pmesh(project.asset(project.mesh["path"]))
+        project.mesh["contains_tetrahedra"] = bool((classify_cells(mesh) == CELL_TET).any())
+    if not project.mesh["contains_tetrahedra"]:
+        project.mesh.pop("tet_defaults_applied", None)
+    if project.mesh["contains_tetrahedra"] and not project.mesh.get("tet_defaults_applied"):
+        project.settings.mode = "cis"
+        project.settings.kinetic.update(positivity_limiter=True, pseudo_time="velocity", pseudo_cfl=5)
+        project.mesh["tet_defaults_applied"] = True
+        project.dirty = True
+        return True
+    return False
 
 
 def generate_mesh(project, options, cancel=None):

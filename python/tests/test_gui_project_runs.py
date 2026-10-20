@@ -180,7 +180,7 @@ def test_float_display_keeps_precision(gui):
     assert field.value() == 0.012345678901
 
 
-@pytest.mark.parametrize("mode,sub", [("cis", "cis-run"), ("gsis", "run")])
+@pytest.mark.parametrize("mode,sub", [("cis", "run"), ("gsis", "run"), ("nsf", "run")])
 def test_project_cpu_run_and_general_results(gui, tmp_path, mode, sub):
     app, ctx, win = gui
     if not ctx.solver_ok():
@@ -199,7 +199,8 @@ def test_project_cpu_run_and_general_results(gui, tmp_path, mode, sub):
     out = rp._out_dir
     assert out.parent == p.directory / "runs" and (out / "summary.json").is_file()
     metadata = json.loads((out / "gui_run.json").read_text(encoding="utf-8"))
-    assert metadata["command"][1] == sub and "cpu" in metadata["command"]
+    assert metadata["command"][1] == sub
+    assert ("cpu" in metadata["command"]) == (mode != "nsf")
     assert p.stages["run"] == "done" and win.show_page("results")
     rs = win.results_page
     assert rs.load(out)
@@ -218,28 +219,35 @@ def test_project_cpu_run_and_general_results(gui, tmp_path, mode, sub):
     assert not rs.view3d.focus_btn.isVisible()
 
 
-def test_nsf_wait_and_gpu_queue_cancel_resume(gui, tmp_path, monkeypatch):
+def test_gpu_queue_cancel_resume(gui, tmp_path, monkeypatch):
     app, ctx, win = gui
-    p = smoke_project(tmp_path / "project", "nsf")
+    p = smoke_project(tmp_path / "project", "cis")
     win._install_project(p)
     rp = win.run_page
-    assert not rp.start() and "ソルバーの対応待ち" in rp.state.text()
     p.settings.mode = "cis"
     p.settings.kinetic["backend"] = "cuda"
     save_project(p)
     rp.bind_project(p)
     # GPU を起動せずに待機と自動再開を検査する。
-    monkeypatch.setattr("gsis_tools.gui.pages.run_page.mesh_memory", lambda *a: {"total": 3_000_000_000, "budget": 4_000_000_000})
+    from PySide6.QtCore import QTimer
+    monkeypatch.setattr(rp.check_job, "start", lambda *a, **kw: QTimer.singleShot(0, lambda:
+        rp._check_complete(dict(ok=True, memory=dict(fits=True, total=3_000_000_000, budget=4_000_000_000)))))
     rp.backend_combo.setCurrentIndex(0)
     rp.gpu_lock_path = tmp_path / "fake_repo/runs/.gpu_lock"
     other = GpuLock(rp.gpu_lock_path, "S: 試験用の所有者")
     assert other.try_acquire()
+    # 前の実行を穏やかに停止した後も、次の検査・順番待ちを取り消せる。
+    rp._stop_requested = True
+    rp._force_allowed = False
     assert rp.start() and rp._pending_launch is not None
+    assert rp.stop_btn.isEnabled()
+    wait(app, lambda: rp._gpu_lock is not None)
     assert "順番待ち" in rp.state.text() and "試験用の所有者" in rp.lock_info.toPlainText()
     assert not win.save() and not win.show_page("settings")
     rp.stop()
     assert not rp.busy and other.path.is_dir()
     assert rp.start()
+    wait(app, lambda: rp._gpu_lock is not None)
     assert other.release()
     launches = []
     monkeypatch.setattr(rp, "_launch", lambda *args: launches.append(args) or True)
@@ -294,6 +302,10 @@ def test_launch_releases_only_owned_lock(gui, tmp_path, outcome):
         wait(app, lambda: rp.proc is not None and rp.proc.processId() > 0)
         assert path.is_dir()
         (rp.stop if outcome == "stop" else rp.shutdown)()
+        if outcome == "stop":
+            assert (tmp_path / "out/STOP").is_file()
+            rp._allow_force_stop()
+            rp.force_stop()  # 模擬プロセスは STOP を読まない。
     wait(app, lambda: not rp.busy)
     assert not path.exists()
 

@@ -121,7 +121,8 @@ def test_settings_manual_grid_and_boundary_update(window):
     assert sp.collect().vel_n[0] == 30
     sp.advanced_toggle.setChecked(True)
     sp.inputs["estimated_cells"].setValue(100000000)
-    assert "VRAM" in sp.note.text() and "減らして" in sp.note.text()
+    assert "VRAM" in sp.note.text() and "概算" in sp.note.text() and "C++" in sp.note.text()
+    assert sp.accept_btn.isEnabled()  # 概算の超過だけで設定の確定を止めない。
     sp.mode.setCurrentIndex(sp.mode.findData("nsf"))
     assert derived(sp.collect())["memory"]["distribution"] == 0
     sp.gas.setCurrentText("任意")

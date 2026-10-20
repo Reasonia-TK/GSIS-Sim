@@ -17,7 +17,7 @@ from pathlib import Path
 
 RUN_SUBCOMMANDS = ("run", "cis-run", "pbc-run")
 SUBCOMMAND_LABELS = {
-    "run": "run(GSIS-PBC。フェーズ 4)",
+    "run": "run(CIS / GSIS-PBC / NSF。ケースのモードを使用)",
     "cis-run": "cis-run(運動論ソルバー CIS だけ)",
     "pbc-run": "pbc-run(PBC マクロソルバーだけ、NSF のみ)",
 }
@@ -111,6 +111,24 @@ def split_extra_args(text: str) -> list[str]:
         return []
     parts = shlex.split(text, posix=False)
     return [p[1:-1] if len(p) >= 2 and p[0] == p[-1] and p[0] in "\"'" else p for p in parts]
+
+
+def nsf_args(args):
+    """NSF が受け取らない運動論・定期出力の引数を追加欄も含めて除く。"""
+    valued = {"--min-iter", "--vtu-every", "--dump-every", "--sections", "--backend", "--precision"}
+    switches = {"--save-init"}
+    out, skipped = [], []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        flag = arg.split("=", 1)[0]
+        if flag in valued | switches:
+            skipped.append(f"{flag}(NSF では未対応)")
+            i += 2 if flag in valued and "=" not in arg and i + 1 < len(args) else 1
+        else:
+            out.append(arg)
+            i += 1
+    return out, skipped
 
 
 @dataclass

@@ -1,6 +1,6 @@
-# GUI(gsis-gui、汎用アプリ G2)
+# GUI(gsis-gui、汎用アプリ G3c)
 
-- 版: 0.5 / 2026-10-19。G3a: 実行・結果の一般化、GPU順番待ち、管の例題を実装。
+- 版: 0.7 / 2026-10-20。G3c: Maxwell 壁・質量流量入口、初期圧力の検査、入口圧力の履歴と最終流量誤差を接続。G3b の S2 検査・STOP・SI 出力・保存性診断も継続。
 - 2026-10-18: 画面「モデリング(AI)」を足した(§2.3。自然言語の指示で、AI が gmsh の MCP ツールで計算領域を作り、パッチを付け、`.pmesh` まで書き出す)
 - 2026-10-18(追加): Anthropic 形式の既定のモデルを `claude-opus-5-5` にした(ユーザーの決定)。OpenAI 形式に Responses API を足した(Chat Completions API と選べる。§2.3.4・§2.3.8)。画面の画像 01〜31 を、5 つの画面の今の GUI で撮り直した(§5)
 - 仕様: `docs/spec.md` §4.1・§4.6・§6
@@ -8,7 +8,7 @@
 
 計算を **形状 → 設定 → 境界条件 → メッシュ → 実行 → 結果** の6段階で作るアプリ。
 形状から四面体メッシュ、ソルバー用 `case.toml` を作成・保存し、プロジェクト内に実行履歴と結果を残せる。
-Maxwell壁・質量流量入口・NSF・ソルバーの自動速度格子・`check-case --json` との突き合わせはG3bで接続する。
+Maxwell壁・質量流量入口は S3 対応版ソルバーで使用できる。固定版は `runs/phase8/s3/gsis-solver-s3-final.exe`。
 ソルバーとはファイルとサブプロセスでやり取りし、Qtなしの `project.case_document()` で `case.toml` を生成する。
 
 ## 1. 起動
@@ -48,6 +48,7 @@ uv run --project python --extra gui gsis-gui --results runs\kinetic\tube_delta1_
 | 環境変数 | 内容 |
 |---|---|
 | `GSIS_GUI_SETTINGS` | 設定ファイルの場所を変える(試験・スクリーンショットで使う) |
+| `GSIS_SOLVER` | 既定探索・保存済みのパスに優先するソルバー。`--solver` と画面の選択でさらに変更できる |
 | `GSIS_GUI_3D` | 3D の方式: `interactive`(既定)/ `static`(オフスクリーンの静止画)/ `none` |
 | `GSIS_ROOT` | リポジトリのルート(既定はパッケージの場所から探す) |
 | `GSIS_GUI_AI_WORKSPACE` | モデリング(AI)の既定の作業フォルダ(設定で作業フォルダを決めていないとき)。なく、`GSIS_GUI_SETTINGS` があれば、その設定ファイルの隣の `ai_workspace`(試験とスクリーンショットで、利用者の作業フォルダに触らないため)。どちらもなければ `<リポジトリ>/mcp_workspace/gui` |
@@ -115,7 +116,7 @@ gmshの取り込みキャッシュは `.gsis_mcp/` に置く。AI手順の再現
 
 ```toml
 [settings]
-mode = "gsis" # gsis / cis / nsf(NSFの実行接続はG3b)
+mode = "gsis" # gsis / cis / nsf。四面体を初めて確認したときは cis
 gas = "He" # He / Ne / Ar / Kr / Xe / 任意
 molecular_mass = 6.65e-27
 mu_ref = 1.916e-5
@@ -156,9 +157,11 @@ AIの記録は `geometry.ai_state`・`geometry.ai_conversation` に相対パス�
 - Heはv1の値。他の4種は **Bird (1994) 表 A1、273 K** のVHS定数へ切り替えた。値は統括役の提供で、G2では一次資料と照合していない。
 - 基準長さの自動／手動、基準温度・圧力、境界の最低／最高温度と最大速度を入力する。境界の割り当て・確定時に `GeneralSettings.update_boundary_defaults()` で更新する。圧力境界がなければ入力した圧力を保つ。
 - `n_cis/max_pbc/cfl_pbc/tolerance` を編集する。上級では運動論とPBCの既知のパラメータを追加できる。メモリ見積もりはFP32。
-- 自動の速度範囲は±(|u|max + 5√(R T_max))。幅/n ≤ 0.7√(R T_min)となる偶数の点数を採り、T0で無次元化して `case.toml` に書く。手動は各軸の点数と範囲を指定する。
-- R、μ(T0)、平均自由行程、Kn、点数、VRAMの概算を編集ごとに表示する。f=セル数×速度点×4 B、作業領域=セル数×チャンク幅×16 B、固定費0.1 GB。空きから1 GBを残し、自動チャンクを縮める。収まらなければセル数・速度点を減らす案を出す。NSFではfとチャンクの割当てを0とする。
-- 設定画面のセル数・空きVRAMは仮定値。メッシュ画面では実セル数で再計算し、予算超過時に実行への遷移を止める。S2の `check-case --json` との一致はG3で確認する。
+- 自動の速度範囲は±(|u|max + 5√(R T_max))。幅/n ≤ 0.7√(R T_min)となる偶数の点数を採る。自動時の `case.toml` は `[velocity_grid] auto=true` のみとし、`n`・`range` は書かない。手動時は各軸の数値を書く。C++ は実際の境界入力から決定し、Python の表示と食い違えば警告する。
+- R、μ(T0)、平均自由行程、Kn、点数、VRAMの概算を編集ごとに表示する。Python は FP32 の f=セル数×速度点×4 B、作業領域=セル数×チャンク幅×16 B、固定費0.1 GB、予約1 GiBの概算。固定費・丸め・残差部分和はC++と異なり、安全側とは限らない。NSFのGPU費用は全て0。
+- 設定・境界の編集後350 msで `check-case --json --no-mesh`、完成メッシュがあれば `check-case --json` を非同期に実行する。導出量、速度格子、VRAM、パッチ、警告・エラーを表示する。古い要求は取り消し、30秒でタイムアウトする。
+- **VRAM 確定見積もり(C++)** は S2 の `memory` を使う。精度・固定配列・鏡映・チャンクの丸めを含む。実行時も精度を反映して再検査し、GPUの予算超過なら開始を止める。空きVRAMは設定欄の仮定値を `--free-vram-bytes` で渡すため、実際の確保成功を保証しない。
+- 四面体を含むメッシュの初回確認時は CIS 単独と `[kinetic] positivity_limiter=true, pseudo_time="velocity", pseudo_cfl=5` を既定にする。その後の明示選択は保持する。GSISを選ぶと「四面体の GSIS は検証中(流量がずれることがある)」と警告する。六面体のみの例題は従来どおり。
 - 不正な入力では確定・保存を止める。「設定を確定して境界条件へ」で済にする。
 
 | 気体 | 分子の質量 [kg] | μ_ref [Pa·s] | T_ref [K] | ω |
@@ -181,14 +184,25 @@ AIの記録は `geometry.ai_state`・`geometry.ai_conversation` に相対パス�
 | 種類 | 入力 |
 |---|---|
 | `diffuse_wall` | 温度 [K]、任意の壁速度 x/y/z [m/s] |
-| `maxwell_wall` | 温度、適応係数 0 < α ≤ 1、任意の壁速度 |
+| `maxwell_wall` | 温度 [K]、適応係数 `accommodation` (0 < α ≤ 1、既定1)、任意の接線方向の壁速度 `velocity` [m/s] |
 | `pressure_inlet` | 正の圧力 [Pa]、温度、接線速度 `extrapolate` / `zero` |
 | `pressure_outlet` | 0以上の圧力 [Pa] |
 | `vacuum` | 追加の値なし |
-| `mass_flow_inlet` | 正の流入質量流量 [kg/s]、温度、接線速度 `extrapolate` / `zero` |
+| `mass_flow_inlet` | パッチ全体の正の流入質量流量 `mass_flow` [kg/s]、温度 [K]、接線速度 `tangential_velocity` = `extrapolate` / `zero` |
 | `symmetry` | 法線が座標軸にそろう平面だけ。同じパッチ内は同じ軸に限定 |
 
 未割り当て面は `default_wall` (予約名)の拡散壁に入れる。温度は設定画面の「既定の壁温度」(`wall_temperature`)で指定する。境界の最高温度から基準温度を更新しても既定壁の温度は変わらない。面ごとに異なる温度にする場合は、新しい壁パッチへ割り当てる。G1の既存プロジェクトでこの設定がない場合は、保存されていた基準温度から補う。
+
+Maxwell壁の α=1 は拡散壁と同じ。α<1 と NSF の組合せでは、設定・境界・実行・結果で精度の注意を出す。NSFは半空間Maxwell混合のPBC境界を使い、連続体のすべり・温度跳躍の定量精度を保証しない。完全拡散壁の既定NSFすべり係数を α<1 に流用しない(ref1d側でも拒否する)。傾斜面の鏡面反射は速度空間の補間を含むので、速度格子への依存性を確認する。
+
+質量流量入口は初期 `p_b = p_ref` から始め、目標流量に合わせて圧力を反復中に更新する。圧力入口・圧力出口がなく、質量流量入口と真空などだけのときは、設定画面の `p_ref` を保持する。流量からの圧力の自動推定は行わない。設定・境界・実行画面にこの扱いを表示する。`check-case --json` のパッチごとの α・目標 [kg/s]・初期 p_b [Pa] は設定・メッシュ画面の検査欄で確認できる。
+
+自動速度格子は質量流量入口の温度とMaxwell壁の温度・任意の壁速度も集計する。接線速度の `zero/extrapolate` は速度ベクトルとして加算しない。C++ の格子と照合し、食い違えば警告してC++値を使う。旧ケース編集窓でも新境界の値を読み書きできる。
+
+![Maxwell壁](gui_screenshots/75_s3_maxwell_wall.png)
+![質量流量入口](gui_screenshots/77_s3_mass_flow_inlet.png)
+![S3入力検査](gui_screenshots/79_s3_check_case.png)
+![NSFと部分適応壁の注意](gui_screenshots/85_s3_nsf_maxwell_warning.png)
 
 CADまたはAI形状の再採用時には、番号に依存せず幾何の指紋で照合する。一意に照合できなかった旧面を形状画面と状態欄に知らせる。割り当てを失った明示パッチは空のまま残すので、再割り当てまたは削除してから境界を確定する。
 
@@ -204,7 +218,7 @@ CADまたはAI形状の再採用時には、番号に依存せず幾何の指紋
 - 生成は別スレッドが専用プロセスを起動し、MCP engine のCAD・物理グループ・gmsh生成・pmesh出力を再利用する。「停止」は子プロセスを終了し、途中出力を削除する。以前の完成したメッシュは保持する。生成中は段階の切り替え・保存を止める。
 - 終了後にセル数・非直交角・歪み・隣接体積比、各パッチの面積とCAD面積との差、実セル数によるVRAMの概算を表示する。メッシュと品質レポートは `mesh/<名前>.pmesh`・`<名前>_quality.md`・`<名前>_quality.json` に保存する。
 - 予算内ならメッシュを済にし、`case.toml` を生成・保存する。予算超過ではメッシュと品質を保存しても済にせず、実行へ進ませない。セル数または速度点を減らす。
-- 現行ソルバーとの接続試験は `diffuse_wall/pressure_inlet/pressure_outlet/vacuum/symmetry` の5種。自動速度格子も計算した数値を `n/range` として書く。Maxwell壁・質量流量入口・NSF・ソルバー側の自動格子はG3bで確認する。
+- S3固定版でMaxwell壁・質量流量入口を含む入力とCPUの3モードを確認した。自動速度格子は `auto=true` だけを書き、手動時は `n/range` を書く。
 - 数値入力欄は有効数字6桁程度で表示する。画面から編集しなければ、表示前の精度を保存・計算に使う。
 
 ![VRAM予算超過](gui_screenshots/50_mesh_vram_warning.png)
@@ -421,19 +435,23 @@ SDK 3.35.1 の型(`ResponseCreateParams` の `store`・`include` の説明、`Fu
 ![プロジェクトの実行](gui_screenshots/51_project_run.png)
 ![小さな箱をCPUで5反復](gui_screenshots/59_general_cpu_run.png)
 
-- プロジェクトのモードから `gsis → run`、`cis → cis-run` を選ぶ。`nsf → pbc-run` の対応は保持するが、G3aでは「ソルバーの対応待ち」と表示して実行しない。
+- 3モードとも `run` を使い、ケースの `mode="gsis" / "cis" / "nsf"` で選ぶ。NSFはCPUで動作しGPUロックを使わない。`--min-iter`・`--vtu-every`・`--dump-every`・`--save-init`・`--sections`・`--backend`・`--precision` は追加欄を含めNSFに送らない。NSFのεはp/u/T更新ノルムで、GSISの式(59)とは定義が異なる。
 - 実行ごとに `<project>/runs/YYYY-MM-DD_HHMMSS/` を作り、同じ秒なら `_2` 以降を付ける。その中に入力の写し `case.toml` と識別用の `gui_run.json` を保存し、`--out` で同じフォルダを渡す。メッシュはプロジェクト内の完成品を絶対パスで参照する。過去の実行入力は保持する。
 - 使える引数は `gsis-solver --help` から読む。反復上限・収束判定・実行先・精度・表示間隔・`--no-vtu`・`--cells-csv` を指定できる。追加欄では出力先・実行先・精度の上書きと `--set` を拒否する。実行先をCPUにすればGPUの順番待ちは不要。
 - **ログ**: 標準出力と標準エラー(UTF-8)をそのまま出す(エラーは赤、警告は黄)
 - **グラフ**(1 秒ごとに `history.csv` を読み足す): 上は収束(cis-run は ε、pbc-run は更新量と質量の残差。「収束のグラフに描く列」で選べる)と収束判定の線。下はパッチごとの質量流量(管ケースは論文の無次元質量流量 Ṁ、入口は流入・出口は流出を正)と、論文 Table 1 の値の線(管のメッシュのときだけ)。横軸は反復か経過時間
 - **状況**: 反復、ε(または更新量)、Ṁ と流入・流出の差、経過時間と 1 反復の時間、GPU のメモリ(nvidia-smi で 5 秒ごと。GPU 全体の使用量で、ほかのプログラムの分を含む)
-- **停止**: プロセスを終了させる(Windows のコンソールのプログラムは穏やかな終了の要求を受けないため kill)。出力は途中まで残る
+- **停止**: 出力先に `STOP` を作り、反復終了時に summary・VTU・セルCSVを保存して停止する。60秒経っても動いていれば「強制終了…」を選べる。GUIが作ったSTOPは内容の所有トークンを確認して終了後に削除する。他者のSTOPは保持する。結果では `stopped_by_user` を「利用者が停止」と表示する。
 - **出力フォルダを追う**: 実行せずに、指定した出力フォルダの `history.csv` を読んで表示する(別に起動した計算や、終わった計算を見る)。summary.json があれば、そのケースと収束判定を使う
 - 終わったら「結果を開く」で結果の画面に移る
 
+質量流量入口がある履歴では、3段目に **入口圧力 p_b [Pa]** を追加する。列は `p_b_<patch>_Pa`、複数入口は別の系列。CIS・GSIS・NSF、実行中・過去の出力・結果の履歴タブで同じグラフを使う。GSISではCISとPBCが共通のp_bを使う。入口圧力を出さない旧履歴では従来の2段の表示を保つ。
+
+![入口圧力の履歴(CPU・5反復、未収束)](gui_screenshots/81_s3_inlet_pressure_history.png)
+
 #### GPUの順番待ち
 
-VRAM概算が **2,000,000,000バイト以上** のGPU計算は、ソルバーを置いたリポジトリの `runs/.gpu_lock` を `mkdir` で取得してから開始する。プロジェクトをリポジトリ外に保存してもロックは同じ場所。ソルバーの祖先からリポジトリを特定できない場合は、アプリのリポジトリを使う。
+VRAMのC++確定見積もりが **2,000,000,000バイト以上** のGPU計算は、ソルバーを置いたリポジトリの `runs/.gpu_lock` を `mkdir` で取得してから開始する。プロジェクトをリポジトリ外に保存してもロックは同じ場所。ソルバーの祖先からリポジトリを特定できない場合は、アプリのリポジトリを使う。
 
 ![GPU順番待ち(撮影用の一時ロック)](gui_screenshots/53_gpu_wait.png)
 ![GPU順番待ち・ダーク](gui_screenshots/54_dark_gpu_wait.png)
@@ -442,7 +460,7 @@ VRAM概算が **2,000,000,000バイト以上** のGPU計算は、ソルバーを
 - `owner.txt` はGUI名、所有トークン、ホスト、GUIのPID、計算名・出力先、開始日時を持ち、起動後にはソルバーPIDを追記する。他の担当の自由形式の `owner.txt` もそのまま表示する。
 - 正常終了・失敗・起動失敗・停止・GUIの通常終了では、**このGUIが取得し、所有トークンが一致するロックだけ**を解除する。他者のものや所有情報が変わったものは保持する。
 - GUIが落ちて残ったロックは、同じPC・同じGUI名でも自動削除しない。GUIのPIDが消えてもソルバーが動いている可能性があるため。表示した `owner.txt` とプロセスを確認し、所有者が計算の終了を確かめてから手動で解除する。GUIには強制解除ボタンを設けていない。
-- 停止は現行のプロセス強制終了を継続する。STOPファイルによる穏やかな停止の接続はG3b。
+- 入力検査中と順番待ち中の「停止」は、ソルバーを起動せずに要求を取り消す。
 
 #### 例題の管
 
@@ -467,11 +485,19 @@ VRAM概算が **2,000,000,000バイト以上** のGPU計算は、ソルバーを
 ![パッチの集計と壁面の法線応力](gui_screenshots/57_patch_wall_results.png)
 ![パッチ集計・ダーク](gui_screenshots/58_dark_patch_wall_results.png)
 
-- 全パッチの質量流量[kg/s]・熱流量[W]・壁が受ける力の3成分[N]を表とCSVに出す。質量・熱は領域から外向きを正とする。入口は通常負になる(履歴グラフは流入を正にして表示)。ない値は **「ソルバーの出力にない」** と明記する。
-- 質量はsummaryの `mdot_kg_s`、または `mdot_nd` と基準量から求め、なければ境界VTUの `mass_flux × 面積` を積分する。壁の力はsummaryの `momentum_flux_nd` をSIに直すか、境界の `momentum_flux × 面積` を積分する。開口の運動量輸送は壁の力にしない。
-- 熱は境界の `heat_flux_normal × 面積` がある場合に集計する。現行の `energy_flux` は全エネルギー流束なので熱流量に読み替えない。G3aで確認した既存出力では熱流量は欠測となる。S2の新しいsummaryの項目との接続はG3bで照合する。
+- S2 の `summary.patches[]` の `area_m2`・`mass_flow_kg_s`・`heat_flow_W`・`energy_flow_W`・`force_N` を表とCSVに使う。質量・局所熱・全エネルギーは **流入が正**。力は気体がパッチに及ぼす力で、開口では運動量輸送を表す。流量の正方向を行ごとに表示する。欠測は **「ソルバーの出力にない」** と明記する。
+- 新キーがない旧出力は従来の外向き正で表示する。質量は `mdot_kg_s`、無次元値のSI換算、または境界の `mass_flux × 面積`。壁の力は `momentum_flux_nd` のSI換算か境界積分を使う。
+- `heat_flow_W` は局所気体系の q の積分。`energy_flow_W` は移流と仕事を含む全エネルギーで、熱と区別する。境界VTUの `energy_flux` を熱流量と同一視しない。旧出力の熱は `heat_flux_normal × 面積` がある場合のみ集計する。
 - 壁の全パッチ・境界の全パッチ・個別パッチを選び、`boundary.vtu` の法線応力・せん断応力・全エネルギー流束・境界温度など、ある量をSIで色付けする。ベクトルは大きさ・x・y・zを選べる。VTUに熱流束がなければ熱流束は選択肢に出ない。
-- CSVはUTF-8 BOM付き、列名は `patch,type,mass_flow_kg_s,heat_flow_W,force_x_N,force_y_N,force_z_N`。表示の丸め前の値を保存する。
+- 表には種類とMaxwell壁の適応係数 α (`accommodation`) も表示する。CSVはUTF-8 BOM付き、列名は `patch,type,accommodation,area_m2,mass_flow_kg_s,heat_flow_W,energy_flow_W,force_x_N,force_y_N,force_z_N,flow_sign,pressure_Pa,target_mass_flow_kg_s,mass_flow_relative_error`。表示の丸め前の値を保存する。
+
+質量流量入口はパッチ集計タブの上の表に **最終 p_b [Pa]・目標 [kg/s]・最終流量 [kg/s]・相対誤差 [%]** を表示する。summaryの `mass_flow_relative_error` とCSVは比率、画面では100倍した百分率。誤差が **0.1%を超えたとき**、または誤差を確認できないときは警告し、実行終了時のログと結果上部にも表示する。GSISの流量は補正後fの値。停止や反復上限の結果は収束解として扱わない。
+
+目標を満たすことと全体の保存性は別に確認する。`mass_flow_inlet` は入口として分類し、従来の入口・出口の差と `conservation_diagnostics` の警告を引き続き表示する。
+
+![入口の最終値・流量誤差・壁のα](gui_screenshots/83_s3_inlet_results.png)
+
+GSIS の `conservation_diagnostics.warning=true` なら、結果の上部と実行終了時に「残差では収束扱いだが、補正後の質量の保存がずれている(入口 x kg/s、出口 y kg/s、差 z %)」と警告する。未収束時は「未収束で」と表記する。`last_pbc_correction` の epsilon・rho・u・T と、従来の `mass_balance` の入口出口・断面ばらつきの警告も表示する。収束フラグの意味は変更しない。
 
 VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示の計算(断面・等値線・流線)・線上の分布・中心線の作り直しも
 別スレッドで 1 つずつ順に行い(`workers.JobRunner`。同じ格子を 2 つのスレッドで同時に触らない)、画面は出来上がったものを
@@ -555,11 +581,11 @@ VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示
 |---|---|---|
 | GUI → ソルバー | ケース TOML | `project.case_document()` がメッシュの相対パスと境界を生成。旧編集窓は従来の読書きを保持 |
 | GUI → ソルバー | `gsis-solver --help` | サブコマンドの一覧と、使い方の行にある引数(`--out` など)を読む |
-| GUI → ソルバー | `gsis-solver check-case <toml>` | 出力をそのまま表示。終了コード 0 で合格 |
-| GUI → ソルバー | `gsis-solver run\|cis-run\|pbc-run <toml> --out <dir> …` | QProcess で起動。標準出力・標準エラーは UTF-8 として読む。終了コード 0 / 1(エラー)/ 2(引数の誤り、「知らないサブコマンド」を含む)で説明を変える |
+| GUI → ソルバー | `gsis-solver check-case <toml> --json [--no-mesh] --free-vram-bytes N` | QProcess で非同期検査。成功・失敗ともJSONを読む。詳細は `docs/build.md` §10 |
+| GUI → ソルバー | `gsis-solver run <toml> --out <dir> …` | 3モード共通。QProcess で起動。標準出力・標準エラーは UTF-8 として読む。終了コード 0 / 1(エラー)/ 2(引数の誤り)で説明を変える |
 | ソルバー → GUI | `<out>/history.csv` | 1 秒ごとに後ろだけ読む(途中で切れた行は次回に回す。作り直されたら読み直す。実行を始める前の古いファイルは読まない) |
-| ソルバー → GUI | `<out>/summary.json` | 反復、収束、時間、`mass_flow.M_dot`(cis-run・run)または `M_dot`(pbc-run)、`patches`(パッチ名と種類)、`reference`(無次元化の基準量。cis-run・run にあり、pbc-run にはない)、`delta`、`tolerance`、`mode`(run の gsis / cis)、`case_file` |
-| ソルバー → GUI | `<out>/fields.vtu`(cis-run)・`cells.vtu`(pbc-run)・`boundary.vtu` | pyvista で読む。セル値は SI(rho, u/U, T, p, …)。ない場はリストに出さない |
+| ソルバー → GUI | `<out>/summary.json` | 反復、収束、停止、時間、`patches` のSI値、`reference`、`delta`、`tolerance`、`mode`、`case_file`、保存性診断。旧出力も読み取る |
+| ソルバー → GUI | `<out>/fields.vtu`(run)・`cells.vtu`(旧pbc-run)・`boundary.vtu` | pyvista で読む。セル値は SI(rho, u/U, T, p, …)。ない場はリストに出さない |
 | ソルバー → GUI | `<out>/cells.csv`(任意) | VTU がないときに中心線をこれから作る |
 | GUI → gsis_tools | MCP engine のメッシュ生成・物理グループ・pmesh出力、`compute_quality` / `format_report` | 一般形状の四面体。管の生成器もPython APIに保持 |
 
@@ -580,6 +606,32 @@ VTU の読み込みは別スレッド(13.5 万セルで 2 秒前後)。3D 表示
 - **論文との比較**: `reference/paper_2610.07658/` の `table1_tube.csv` と `fig3_*.csv` を読む。論文の線・記号は管のメッシュのとき(メッシュの metadata が `gsis_tools.geometry.tube` か、ファイル名が tube で始まる)だけ実行の画面に出す
 
 ## 4. 試験
+
+G3bは固定版 `runs/phase8/s2/gsis-solver-s2-final.exe` を指定して、`test_gui_s2.py` のS2接続試験と全Python試験を行う。今回のコマンドと結果は `docs/phase8_g3b_report.md` に記録する。サンドボックスではuvを使わず既存環境を直接起動する。
+
+G3cではS3固定版へ切り替え、既存S2の接続試験も `GSIS_SOLVER` の指定に従う。`test_gui_s3.py` では境界値の検査・TOMLの往復・自動速度格子のC++照合・12セル箱のCPU3反復とSTOP・複数入口の圧力表示・結果とCSV・0.1%の警告閾値を確認する。小さい箱は試験・撮影時だけ生成し、例題メニューには追加しない。数値精度の検証には `cases/general/s3/` とS3報告を参照する。
+
+```powershell
+New-Item -ItemType Directory -Force build/tmp_g | Out-Null
+$env:TEMP = "$PWD\build\tmp_g"; $env:TMP = $env:TEMP
+$env:PYTHONUTF8 = '1'
+$env:QT_QPA_PLATFORM = 'offscreen'
+$env:GSIS_SOLVER = "$PWD\runs\phase8\s3\gsis-solver-s3-final.exe"
+$env:OMP_NUM_THREADS = '2'
+python\.venv\Scripts\python.exe -m pytest python/tests -q -p no:cacheprovider --basetemp=build\tmp_g\pytest_g3c
+```
+
+全体試験の結果と未確認事項は `docs/phase8_g3c_report.md`。
+
+```powershell
+New-Item -ItemType Directory -Force build\tmp_g | Out-Null
+$env:TEMP = "$PWD\build\tmp_g"
+$env:TMP = $env:TEMP
+$env:PYTHONUTF8 = "1"
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:GSIS_SOLVER = "$PWD\runs\phase8\s2\gsis-solver-s2-final.exe"
+python\.venv\Scripts\python.exe -m pytest python/tests -q -p no:cacheprovider --basetemp=build\tmp_g\pytest
+```
 
 G1の結果は `docs/phase8_g1_report.md`、G2の結果・コマンドは `docs/phase8_g2_report.md`。`test_gui_general.py` はQtなし、`test_gui_general_pages.py` は6段階・CAD・設定・保存を検査する。G2は `test_gui_boundaries_mesh.py` と `test_gui_boundaries_mesh_pages.py` で、指紋の引き継ぎ、7種の境界、停止、予算超過、箱とオリフィスから現行ソルバーの `check-case` までを検査する。以下の件数は旧版の記録。
 
@@ -653,6 +705,32 @@ G3aの実行・順番待ち・結果の写真51–62(ライト・ダーク各6�
 python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots_g3a
 ```
 
+G3bの63–74は、入力検査(メッシュ前・後)、停止要求・保存後、SIパッチ表、保存性警告のライト・ダーク各6枚。S2固定版と128セル・64速度点の箱をCPUで使用し、本物のGPUロックを触らない。撮影の入力・出力は `TEMP` 以下へ残す。**73–74だけは保存性診断値を模擬した表示例**で、画面内にも明記する。
+
+```powershell
+python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots_g3b --solver runs/phase8/s2/gsis-solver-s2-final.exe
+```
+
+![S2入力検査・メッシュ前](gui_screenshots/63_s2_check_settings.png)
+![S2入力検査・メッシュ込み](gui_screenshots/65_s2_check_mesh.png)
+![STOPによる停止要求](gui_screenshots/67_s2_stop_request.png)
+![停止後の保存](gui_screenshots/69_s2_stopped.png)
+![SIパッチ表・ダーク](gui_screenshots/72_dark_s2_patch_si.png)
+![保存性警告の表示例・診断値は模擬](gui_screenshots/73_s2_conservation_example.png)
+
+G3cの75–86はMaxwell壁、質量流量入口、S3入力検査、p_b履歴、入口最終値とパッチ表、NSFの注意。各画面をライト・ダークで撮影する。12セル・8³速度点の箱をCPUで5反復だけ解き、未収束時の実際の数値を表示する。模擬の結果値は使わない。撮影用ロックは一時領域へ向ける。
+
+```powershell
+python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots_g3c --solver runs/phase8/s3/gsis-solver-s3-final.exe
+```
+
+![Maxwell壁・ダーク](gui_screenshots/76_dark_s3_maxwell_wall.png)
+![質量流量入口・ダーク](gui_screenshots/78_dark_s3_mass_flow_inlet.png)
+![S3入力検査・ダーク](gui_screenshots/80_dark_s3_check_case.png)
+![入口圧力履歴・ダーク](gui_screenshots/82_dark_s3_inlet_pressure_history.png)
+![入口最終値・ダーク](gui_screenshots/84_dark_s3_inlet_results.png)
+![NSF注意・ダーク](gui_screenshots/86_dark_s3_nsf_maxwell_warning.png)
+
 ## 6. 構成
 
 | モジュール | 内容 |
@@ -675,19 +753,20 @@ python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots_g3a
 | `meshgen.py`・`fields.py` | メッシュ生成と品質・3D 用のデータ、VTU の場・任意の断面・等値線・流線・線上の標本と CSV(pyvista。Qt なし) |
 | `workers.py` | 別スレッドの処理(QThread)、結果の画面の計算を 1 つずつ順に行う `JobRunner`、logging の受け渡し |
 | `screenshots.py`・`screenshots_ai.py` | スクリーンショットの作成(G1/G2の32〜50、従来AIの24〜31) |
+| `screenshots_g3b.py`・`screenshots_g3c.py` | S2/S3接続画面の撮影。G3cの小さな試験用入力の生成 |
 
 ## 7. 未実装の点・既知の制約
 
-- S2のJSON出力と速度格子・VRAMの照合、新しい境界条件とNSFの受理、実行・結果の一般化はG3。NSFのモード名は `nsf` で確定。
-- VRAMは暫定の固定費と実セル数による見積もりで、GPUの空きの実測ではない。非HeプリセットはBird (1994) 表 A1、273 Kの統括役提供値。
+- 四面体GSISの精度はS1で未解決。GUIはCISを既定にし、GSIS選択時は警告する。Maxwell壁の傾斜面での速度格子依存性、NSF単独のすべり・温度跳躍の精度もS3の制約が残る。
+- C++のVRAM見積もりに渡す空きは設定の仮定値であり、GPUの空きの実測ではない。Python表示は概算。非HeプリセットはBird (1994) 表 A1、273 Kの統括役提供値。
 - IGESは面を縫い合わせる。閉じない面・複数の立体は拒否する。OCCで読み込めない破損CADの自動修復はしない。
 
-- **フェーズ 4 の `run`**: 2026-10-18 の時点では `build/release` のソルバーにある(上のツールバーに run・cis-run・pbc-run と出る。2026-10-16 にはなかった)。開発中の `build/phase4` のソルバーでは、`--help` から `run` と引数(`--out`・`--max-iter`・`--tol`・`--backend` など)を読み、GUI のすべての項目が渡せること、出力(history.csv・summary.json)が読めることを確かめた。GPU を長く使うので、`run` の実際の実行は GUI から試していない
+- S3 の固定版 `runs/phase8/s3/gsis-solver-s3-final.exe` で新境界を含む3モードのCPU短時間実行を確認した。G3cではGUI接続を検証し、大規模計算・GPU実行・任意形状での数値精度は検証していない。
 - 結果の 3D 表示に、等値面と境界面の値(`boundary.vtu` の質量流束など)の表示はない。流線・任意の断面・線上の分布は v0.2 で足した
 - 断面の色はセルの値(セルごとに一定)で、等値線・流線・線上の分布は点へ補間した値から作る。そのため等値線はセルの大きさの段差を含み、壁に接するセルの値は壁の上の値ではない
 - 平面ウィジェットは対話型の 3D 表示のときだけ使える(画面を出さない方式・静止画の方式では使えない)。ウィジェットの矢印は、正面から見ると少し大きく見える
 - 分布関数の断面表示(spec §6 の任意の機能)はない(ソルバー側にプローブ出力が要る)
-- 停止はプロセスの強制終了なので、止めた時点の summary.json・VTU は書かれない(履歴は残る)
+- STOP後60秒で選べる強制終了やGUIの異常終了では、出力が欠ける場合がある。GUIを強制終了すると自分のSTOPが残る可能性があるが、次の実行は新しい出力先を使う。
 - 実行の画面は 1 つの計算だけを扱う(複数の計算を並べて実行・監視しない)。ソルバーの標準出力は、この画面から起動したときだけ表示できる(「出力フォルダを追う」は history.csv だけ)
 - 一般形状は四面体、管の例題は既存六面体の複製。例題の再生成にはCADがないため対応しない。管の生成器はPython APIに保持する
 - 3D の表示は 13.5 万セルで実用的な速さ(VTU の読み込みと中心線 2 秒前後、断面 0.02 秒、流線は種 60 個で 0.9 秒・300 個で 4 秒)。さらに大きいメッシュと、種が数千個の流線は確かめていない(別スレッドなので画面は固まらないが、時間はかかる)
@@ -711,7 +790,7 @@ python\.venv\Scripts\python.exe -m gsis_tools.gui.screenshots_g3a
 
 ## 8. ソルバー側への要望(統括役・フェーズ 4 の担当へ)
 
-1. 穏やかな停止の手段(例: 出力先に `STOP` というファイルができたら、その反復で止めて summary.json と VTU を書く)。今は強制終了しかできず、止めた計算は結果の画面で 3D・中心線・Ṁ を見られない
+1. (S2・G3bで接続済み)STOPによる停止で summary.json・VTU・セルCSVを保存する。
 2. `pbc-run` の summary.json にも、cis-run・run と同じ `reference`(無次元化の基準量)・`delta`・`tolerance` を入れてほしい(今は GUI がケース TOML から計算している。ケースが動かされると無次元化できない)
 3. history.csv に GPU のメモリの列があると、nvidia-smi(GPU 全体の値で、ほかのプログラムの分を含む)より正確に出せる
 4. (確認済み)`run` の引数の名前が cis-run と同じ(`--out`・`--max-iter`・`--tol`)で、history.csv に `epsilon`・`mdot_<patch>_nd` があるので、GUI はそのまま使える。この形を保ってほしい

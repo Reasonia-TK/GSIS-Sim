@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 from PySide6.QtCore import QObject, Signal
 
@@ -23,7 +24,8 @@ class AppContext(QObject):
         self.theme = theme_manager
         self.settings = settings()
         saved = self.settings.value("solver/path", "")
-        self._solver = Path(saved) if saved and Path(str(saved)).is_file() else default_solver(self.root)
+        self._solver = (default_solver(self.root) if os.environ.get("GSIS_SOLVER") else
+                        Path(saved) if saved and Path(str(saved)).is_file() else default_solver(self.root))
         self._subcommands: dict[str, SubcommandInfo] | None = None
 
     # --- ソルバー ---

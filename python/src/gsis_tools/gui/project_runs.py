@@ -13,7 +13,7 @@ import tomlkit
 
 from .project import Project, case_document
 
-SUBCOMMANDS = {"gsis": "run", "cis": "cis-run", "nsf": "pbc-run"}
+SUBCOMMANDS = dict.fromkeys(("gsis", "cis", "nsf"), "run")
 
 
 def solver_repository(solver: Path, fallback: Path) -> Path:

@@ -36,6 +36,8 @@ def solver_exe_name() -> str:
 
 def default_solver(root: Path | None = None) -> Path:
     """既定のソルバー(``build/release/src/gsis-solver.exe``)。なければ CUDA なしの版を探す。"""
+    if os.environ.get("GSIS_SOLVER"):
+        return Path(os.environ["GSIS_SOLVER"]).resolve()
     root = root or repo_root()
     exe = solver_exe_name()
     candidates = [root / "build" / "release" / "src" / exe, root / "build" / "release-cpu" / "src" / exe]

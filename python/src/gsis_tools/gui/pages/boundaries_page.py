@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 
 from .. import theme
 from ..ai.surface import build_polydata, face_label_points
-from ..boundaries import (DEFAULT_PATCH, FIELDS, KINDS, assign_boundary, validate_boundary,
+from ..boundaries import (DEFAULT_PATCH, FIELDS, KINDS, NSF_MAXWELL_WARNING, assign_boundary, boundary_notes, validate_boundary,
                           validate_boundaries, with_default)
 from ..widgets.common import FloatField, StatusLabel, heading, muted, primary_button, readonly_item
 from ..widgets.vtk_view import Scene, SceneItem, VtkView
@@ -93,6 +93,8 @@ class BoundariesPage(QWidget):
         self.inputs["tangential_velocity"] = tv
         self.form.addRow("接線速度", tv)
         tv.currentIndexChanged.connect(self._draft_changed)
+        self.boundary_note = StatusLabel()
+        right.addWidget(self.boundary_note)
         self.note = StatusLabel()
         right.addWidget(self.note)
         self.apply_btn = primary_button("選択した面を割り当て・更新")
@@ -182,6 +184,7 @@ class BoundariesPage(QWidget):
         self.editing = None
         self.patches.setCurrentIndex(0)
         self.name.setText("patch")
+        self.inputs["accommodation"].setValue(1)
         self.name.setEnabled(True)
         self.apply_btn.setEnabled(True)
         self.refresh()
@@ -197,6 +200,7 @@ class BoundariesPage(QWidget):
         self._loading = True
         self.name.setText(name)
         self.kind.setCurrentIndex(self.kind.findData(b["type"]))
+        self.inputs["accommodation"].setValue(b.get("accommodation", 1))
         for key in ("temperature", "pressure", "mass_flow", "accommodation"):
             if key in b:
                 self.inputs[key].setValue(b[key])
@@ -225,6 +229,8 @@ class BoundariesPage(QWidget):
             elif key == "tangential_velocity":
                 b[key] = self.inputs[key].currentData()
             else:
+                if not self.inputs[key].is_valid():
+                    raise ValueError(f"{key} の入力を確認してください")
                 b[key] = self.inputs[key].value()
         validate_boundary(b, self.project.geometry.get("faces", []))
         return b
@@ -255,6 +261,17 @@ class BoundariesPage(QWidget):
         if existing:
             self.name.setEnabled(False)
             self.delete_btn.setEnabled(False)
+        notes = boundary_notes(self.project.settings, self.project.boundaries)
+        kind = self.kind.currentData()
+        if kind == "mass_flow_inlet":
+            notes.insert(0, "質量流量はパッチ全体の kg/s、流入が正です。正の値だけ指定できます。接線速度は内部からの外挿またはゼロです")
+        if kind == "maxwell_wall":
+            notes.insert(0, "適応係数は 0 < α ≤ 1、既定 1。α = 1 は拡散壁と同じです。速度は接線方向を指定します")
+            alpha = self.inputs["accommodation"].value()
+            if self.project.settings.mode == "nsf" and isinstance(alpha, (int, float)) and 0 < alpha < 1 and NSF_MAXWELL_WARNING not in notes:
+                notes.append(NSF_MAXWELL_WARNING)
+        self.boundary_note.set_status("warning" if NSF_MAXWELL_WARNING in notes else "info", "\n".join(notes))
+        self.boundary_note.setVisible(bool(notes))
         try:
             self.collect()
             if automatic:

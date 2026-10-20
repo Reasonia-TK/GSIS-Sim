@@ -92,7 +92,7 @@ def ensure_gmsh_main_thread() -> None:
     import gmsh
 
     if not gmsh.isInitialized():
-        gmsh.initialize(["-nopopup"], readConfigFiles=False, interruptible=False)
+        gmsh.initialize(["gsis-tools", "-nopopup"], readConfigFiles=False, interruptible=False)
         gmsh.option.setNumber("General.Terminal", 0)
 
 

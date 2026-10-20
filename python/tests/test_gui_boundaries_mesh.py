@@ -144,14 +144,19 @@ def test_boundary_mesh_case_check_case(tmp_path, shape):
     save_project(p)
     saved = json.loads(p.asset("boundaries.json").read_text(encoding="utf-8"))
     assert all(len(b["faces"]) == len(b["fingerprints"]) for b in saved)
-    assert "auto" not in tomlkit.parse(p.asset("case.toml").read_text(encoding="utf-8"))["velocity_grid"]
+    assert tomlkit.parse(p.asset("case.toml").read_text(encoding="utf-8"))["velocity_grid"].unwrap() == {"auto": True}
     assert load_project(p.directory).boundaries == p.boundaries
-    solver = Path(__file__).resolve().parents[2] / "build/release/src/gsis-solver.exe"
+    from gsis_tools.gui.paths import default_solver
+    solver = default_solver()
     assert solver.is_file(), "依頼で指定された check-case 用ソルバーがありません"
     cp = subprocess.run([str(solver), "check-case", str(p.asset("case.toml"))], capture_output=True, timeout=30)
     assert cp.returncode == 0, (cp.stdout + cp.stderr).decode("utf-8", errors="replace")
     p.settings.free_vram_gib = 0.01
     assert not mesh_memory(p, result["cells"])["fits"]
+    assert not p.blocked_reason("run")  # 概算だけでは止めず、C++ の結果で判定する。
+    cp = subprocess.run([str(solver), "check-case", str(p.asset("case.toml")), "--json",
+                         "--free-vram-bytes", str(int(.01 * 2**30))], capture_output=True, timeout=30)
+    p._solver_check = json.loads(cp.stdout)
     assert "VRAM" in p.blocked_reason("run")
     p.asset(p.mesh["path"]).unlink()
     q = load_project(p.directory)

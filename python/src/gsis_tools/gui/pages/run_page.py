@@ -1,10 +1,10 @@
-"""実行の画面: ``gsis-solver`` のサブコマンド(``run``・``cis-run``・``pbc-run``)を起動・停止し、
+"""実行の画面: ``gsis-solver run`` を起動・停止し、
 標準出力のログと ``history.csv``(収束の履歴と質量流量)をリアルタイムに表示する。
 
 - サブコマンドと使える引数は ``gsis-solver --help`` から読む。ないサブコマンド(フェーズ 4 の ``run`` など)は
   一覧に「(このソルバーにはない)」と出し、実行の前に知らせる
 - 出力先は必ず ``--out`` で渡し(使えるとき)、そのフォルダの ``history.csv`` を 1 秒ごとに読む
-- 停止は QProcess の kill(Windows のコンソールのプログラムは terminate では止まらない)。出力は途中まで残る
+- STOP で反復終了時の保存を待ち、60秒後に強制終了を選択できる
 - GPU のメモリ(GPU 全体の使用量)は nvidia-smi があれば 5 秒ごとに読む
 """
 
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import codecs
 import copy
+import json
 import math
 import shutil
 import time
@@ -46,7 +47,8 @@ from ..context import AppContext
 from ..history import HistoryTail, mass_balance, mass_flow_series
 from ..paths import display_path
 from ..reference import load_table1, table1_row
-from ..general_mesh import mesh_memory
+from ..check_case import CheckCaseJob, TET_WARNING
+from ..results import summary_warnings
 from ..project_runs import GpuLock, SUBCOMMANDS, next_run_directory, prepare_run, record_command, solver_repository
 from ..solver import (
     RUN_SUBCOMMANDS,
@@ -87,6 +89,11 @@ class RunPage(QWidget):
         self._current_sub: str | None = None
         self._decoders = {}
         self._stop_requested = False
+        self._owned_stop = None
+        self._force_allowed = False
+        self._checking = False
+        self.check_job = CheckCaseJob(self)
+        self.check_job.completed.connect(self._check_complete)
         self._last_draw = 0.0
         self._pending_draw = False
         self._gpu_proc: QProcess | None = None
@@ -99,6 +106,10 @@ class RunPage(QWidget):
         self.wait_timer = QTimer(self)
         self.wait_timer.setInterval(1000)
         self.wait_timer.timeout.connect(self._try_waiting)
+        self.stop_timer = QTimer(self)
+        self.stop_timer.setSingleShot(True)
+        self.stop_timer.setInterval(60000)
+        self.stop_timer.timeout.connect(self._allow_force_stop)
         self.gpu_timer = QTimer(self)
         self.gpu_timer.setInterval(5000)
         self.gpu_timer.timeout.connect(self._poll_gpu)
@@ -278,7 +289,7 @@ class RunPage(QWidget):
         current = self.sub_combo.currentData()
         self.sub_combo.blockSignals(True)
         self.sub_combo.clear()
-        for name in RUN_SUBCOMMANDS:
+        for name in ("run",):
             label = SUBCOMMAND_LABELS.get(name, name)
             if name not in subs:
                 label += "  — このソルバーにはない"
@@ -306,7 +317,10 @@ class RunPage(QWidget):
                                                  "ソルバーを作り直したら「サブコマンドを読み直す」を押してください")
         else:
             self.sub_note.set_status("ok", self.ctx.subcommands()[name].summary)
-        flags = self._flags(name) or set()
+        flags = set(self._flags(name) or ())
+        if (self.project is not None and self.project.settings.mode == "nsf"
+                or self.project is None and self.case_model is not None and self.case_model.mode == "nsf"):
+            flags -= {"--backend", "--precision"}
         has = lambda item: pick_flag(item, flags) is not None  # noqa: E731
         self.maxit_check.setEnabled(has("max_iter"))
         self.maxit_spin.setEnabled(has("max_iter"))
@@ -340,8 +354,9 @@ class RunPage(QWidget):
         self.set_case(project.directory / "case.toml")
         self._set_default_out()
         self._update_buttons()
-        if project.settings.mode == "nsf":
-            self.state.set_status("warning", "NSF はソルバーの対応待ちです")
+        self._on_sub_changed()
+        if project.mesh.get("contains_tetrahedra") and project.settings.mode == "gsis":
+            self.state.set_status("warning", TET_WARNING)
 
     def use_editor_case(self) -> None:
         if self.editor_case is None:
@@ -407,6 +422,11 @@ class RunPage(QWidget):
     def command(self) -> tuple[list[str], list[str]]:
         sub = self.sub_combo.currentData()
         args, skipped = build_run_args(sub, self.case_field.text() or "<case.toml>", self.options(), self._flags(sub))
+        if (self.project is not None and self.project.settings.mode == "nsf"
+                or self.project is None and self.case_model is not None and self.case_model.mode == "nsf"):
+            from ..solver import nsf_args
+            args, omitted = nsf_args(args)
+            skipped += omitted
         return [str(self.ctx.solver_path()), *args], skipped
 
     def _update_command(self, *_a) -> None:
@@ -415,6 +435,9 @@ class RunPage(QWidget):
         cmd, skipped = self.command()
         self.cmd_edit.setText(" ".join(f'"{c}"' if " " in c else c for c in cmd))
         notes = []
+        if self.project is not None:
+            from ..boundaries import boundary_notes
+            notes.extend(boundary_notes(self.project.settings, self.project.boundaries))
         if skipped:
             notes.append("使えないので渡さない: " + "、".join(skipped))
         if "--out" not in cmd:
@@ -425,7 +448,7 @@ class RunPage(QWidget):
         running = self.busy
         sub = self.sub_combo.currentData()
         self.run_btn.setEnabled(not running and self.ctx.solver_ok() and self.case_model is not None)
-        self.stop_btn.setEnabled(running)
+        self.stop_btn.setEnabled(running and (not self._stop_requested or self._force_allowed))
         self.attach_btn.setEnabled(not running)
         self.results_btn.setEnabled(self._out_dir is not None and (self._out_dir / "summary.json").is_file())
         for w in (self.case_field, self.from_editor_btn, self.sub_combo, self.refresh_btn, self.out_field,
@@ -482,14 +505,18 @@ class RunPage(QWidget):
     def start(self) -> bool:
         if self.busy:
             return False
+        self._stop_requested = False
+        self._force_allowed = False
         if self.project is not None:
             try:
-                p = self.project
+                p = copy.deepcopy(self.project)
+                # 実行先・精度の上書きを反映した C++ 検査をこれから行う。
+                p.__dict__.pop("_solver_check", None)
+                if self.options().backend:
+                    p.settings.kinetic["backend"] = self.options().backend
                 reason = p.blocked_reason("run")
                 if reason:
                     raise ValueError(reason)
-                if p.settings.mode == "nsf":
-                    raise ValueError("NSF はソルバーの対応待ちです")
                 if not self.ctx.solver_ok() or not self.available(SUBCOMMANDS[p.settings.mode]):
                     raise ValueError("指定したモードを実行できるソルバーを選んでください")
                 self.sub_combo.setCurrentIndex(self.sub_combo.findData(SUBCOMMANDS[p.settings.mode]))
@@ -498,8 +525,8 @@ class RunPage(QWidget):
                 # 管理する引数は追加欄から上書きさせない。
                 from ..solver import split_extra_args
                 extra = split_extra_args(self.extra_edit.text())
-                forbidden = ("--out", "--backend", "--precision")
-                if any(a.split("=", 1)[0] in forbidden or a == "--set" for a in extra):
+                forbidden = ("--out", "--backend", "--precision", "--mode", "--set")
+                if any(a.split("=", 1)[0] in forbidden for a in extra):
                     raise ValueError("出力先・実行先・精度は専用欄で指定してください。プロジェクトでは --set は使えません")
                 self._set_default_out()
                 out = Path(self.out_field.text())
@@ -511,18 +538,13 @@ class RunPage(QWidget):
                 record_command(out, cmd)
                 self._pending_launch = (cmd, SUBCOMMANDS[p.settings.mode], out)
                 backend = self.options().backend or p.settings.kinetic.get("backend", "cuda")
-                memory = mesh_memory(p, p.mesh["cells"])
-                if self.options().precision == "fp64" or (self.options().precision is None and
-                                                          p.settings.kinetic.get("precision") == "fp64"):
-                    memory = dict(memory, total=2 * memory["total"])
-                if backend != "cpu" and memory["total"] > memory["budget"]:
-                    raise ValueError("指定した精度では VRAM の予算を超えます。FP32 または小さい格子にしてください")
-                if backend != "cpu" and memory["total"] >= 2_000_000_000:
-                    path = self.gpu_lock_path or (solver_repository(self.ctx.solver_path(), self.ctx.root) / "runs/.gpu_lock")
-                    self._gpu_lock = GpuLock(path, f"G: {p.name} / {out}")
+                self._checked_backend = "cpu" if p.settings.mode == "nsf" else backend
+                precision = self.options().precision
+                self._checking = True
                 self.busy_changed.emit(True)
                 self._update_buttons()
-                self._try_waiting()
+                self.state.set_status("info", "C++ check-case で実行入力を検査しています…")
+                self.check_job.start(self.ctx.solver_path(), p, precision=precision)
                 return self.busy
             except (OSError, ValueError, KeyError) as exc:
                 self.state.set_status("warning", str(exc))
@@ -551,8 +573,28 @@ class RunPage(QWidget):
                 return False
         return self._launch(cmd, sub, out)
 
-    def _try_waiting(self):
+    def _check_complete(self, result):
+        self._checking = False
         if self._pending_launch is None:
+            return
+        memory = result.get("memory")
+        if not result.get("ok") or memory is None:
+            self.state.set_status("error", "入力検査に失敗: " + " / ".join(result.get("errors", [])))
+            self._cleanup()
+            return
+        for warning in result.get("warnings", []):
+            self.log.append_lines(str(warning), kind="warning")
+        if self._checked_backend != "cpu" and not memory["fits"]:
+            self.state.set_status("warning", "C++ の VRAM 見積もりが予算を超えます。格子または精度を見直してください")
+            self._cleanup()
+            return
+        if self._checked_backend != "cpu" and memory["total"] >= 2_000_000_000:
+            path = self.gpu_lock_path or (solver_repository(self.ctx.solver_path(), self.ctx.root) / "runs/.gpu_lock")
+            self._gpu_lock = GpuLock(path, f"G: {self.project.name} / {self._pending_launch[2]}")
+        self._try_waiting()
+
+    def _try_waiting(self):
+        if self._pending_launch is None or self._checking:
             return
         try:
             if self._gpu_lock is not None and not self._gpu_lock.acquired and not self._gpu_lock.try_acquire():
@@ -586,6 +628,8 @@ class RunPage(QWidget):
         self._out_dir = out
         self._t_start = time.time()
         self._stop_requested = False
+        self._force_allowed = False
+        self.stop_btn.setText("停止")
         self._active_tolerance = None
         for flag in ("--tol", "--tolerance"):
             if flag in cmd:
@@ -641,15 +685,18 @@ class RunPage(QWidget):
             self._read(self.proc, "err")
         self._poll(force=True)
         text = self.log.text_all()
-        if self._stop_requested:
-            self.state.set_status("warning", f"停止しました(終了コード {code})。出力は途中まで")
-        elif code == 0:
+        if code == 0:
             conv = self._summary_state()
-            self.state.set_status("ok", f"終了しました(終了コード 0){conv}")
+            self.state.set_status("warning" if self._stop_requested or self._summary_warnings() else "ok",
+                                  f"終了しました(終了コード 0){conv}")
+        elif self._stop_requested:
+            self.state.set_status("warning", f"強制終了しました(終了コード {code})。出力は途中まで")
         else:
             self.state.set_status("error", f"{explain_failure(code, text, self._current_sub)}(終了コード {code})")
         self.log.append_lines(f"— 終了コード {code}({time.time() - self._t_start:.1f} 秒)", stream="gui")
         out = self._out_dir
+        for warning in self._summary_warnings():
+            self.log.append_lines(warning, kind="warning")
         self._cleanup()
         self.run_finished.emit(str(out) if out else "", int(code))
 
@@ -664,9 +711,35 @@ class RunPage(QWidget):
             return ""
         conv = s.get("converged")
         it = s.get("iterations")
-        return f"。{it} 反復で" + ("収束" if conv else "上限に達した(収束していない)") if conv is not None else ""
+        warnings = summary_warnings(s)
+        if s.get("stopped_by_user"):
+            return (f"。利用者が停止({it} 反復)。summary・VTU・CSV を保存しました"
+                    + (" / " + " / ".join(warnings) if warnings else ""))
+        return (f"。{it} 反復で" + ("収束" if conv else "上限に達した(収束していない)") if conv is not None else "") + (" / " + " / ".join(warnings) if warnings else "")
+
+    def _summary_warnings(self):
+        if self._out_dir is None:
+            return []
+        try:
+            return summary_warnings(json.loads((self._out_dir / "summary.json").read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            return []
 
     def _cleanup(self) -> None:
+        self.check_job.cancel()
+        self._checking = False
+        self.stop_timer.stop()
+        if self._owned_stop is not None:
+            path, token = self._owned_stop
+            try:
+                if path.read_bytes() == token.encode("utf-8"):
+                    path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                self.log.append_lines(f"GUI の STOP を削除できません: {exc}", kind="error")
+            self._owned_stop = None
+        self.stop_btn.setText("停止")
         self.wait_timer.stop()
         self._pending_launch = None
         self.lock_info.setVisible(False)
@@ -687,14 +760,47 @@ class RunPage(QWidget):
     def stop(self) -> None:
         if self._pending_launch is not None:
             self._cleanup()
-            self.state.set_status("warning", "GPU の順番待ちを取り消しました")
+            self.state.set_status("warning", "入力検査・GPU の順番待ちを取り消しました")
             self.lock_info.clear()
             return
         if self.proc is None:
             return
-        self._stop_requested = True
-        self.log.append_lines("停止を要求しました(プロセスを終了させます)", stream="gui")
-        self.proc.kill()
+        if self._stop_requested:
+            if self._force_allowed and QMessageBox.question(self, "強制終了", "停止要求から60秒経過しました。強制終了しますか? 出力が欠けることがあります。",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+                self.force_stop()
+            return
+        try:
+            import uuid
+            path = self._out_dir / "STOP"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            token = "gsis-gui " + uuid.uuid4().hex
+            try:
+                with path.open("x", encoding="utf-8") as fh:
+                    fh.write(token)
+                self._owned_stop = path, token
+            except FileExistsError:
+                pass  # 他者が置いた STOP は変更・削除しない。
+            self._stop_requested = True
+            self.stop_timer.start()
+            self.stop_btn.setEnabled(False)
+            self.state.set_status("warning", "停止要求済み。反復の終わりで保存して停止します(60秒後に強制終了を選択可)")
+            self.log.append_lines("STOP を要求しました。summary・VTU・CSV の保存を待っています", stream="gui")
+        except (OSError, TypeError) as exc:
+            self.state.set_status("error", f"STOP を作れません: {exc}")
+
+    def _allow_force_stop(self):
+        if self.proc is not None and self._stop_requested:
+            self._force_allowed = True
+            self.stop_btn.setEnabled(True)
+            self.stop_btn.setText("強制終了…")
+            self.state.set_status("warning", "停止要求から60秒経過しました。保存を待つか、強制終了を選べます")
+
+    def force_stop(self):
+        if self.proc is not None:
+            self._stop_requested = True
+            self.proc.kill()
 
     def attach(self) -> None:
         """実行せずに出力フォルダの history.csv を読む。"""

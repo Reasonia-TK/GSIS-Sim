@@ -102,7 +102,7 @@ class RunResult:
     def kind(self) -> str:
         """出力の形: ``"kinetic"``(cis-run)/ ``"macro"``(pbc-run)/ ``"gsis"`` / ``"unknown"``。"""
         s = self.summary
-        if s.get("mode") == "standalone_nsf" or (self.cell_vtu is not None and self.cell_vtu.name == "cells.vtu"):
+        if s.get("mode") in ("nsf", "standalone_nsf") or (self.cell_vtu is not None and self.cell_vtu.name == "cells.vtu"):
             return "macro"
         if "mass_flow" in s or (self.cell_vtu is not None and self.cell_vtu.name == "fields.vtu"):
             # run(フェーズ 4)は summary.json に mode("gsis" / "cis")を書く。cis-run は mode を書かない
@@ -205,6 +205,46 @@ def _find_case(summary: dict, directory: Path, root: Path) -> Path | None:
         if c.is_file():
             return c.resolve()
     return None
+
+
+def summary_warnings(summary: dict) -> list[str]:
+    """残差の収束と、補正後の保存性・既存の断面診断を別々に伝える。"""
+    warnings = []
+    if summary.get("mode") in ("nsf", "standalone_nsf") and any(
+            p.get("type") == "maxwell_wall" and p.get("accommodation", 1) < 1 for p in summary.get("patches", [])):
+        from .boundaries import NSF_MAXWELL_WARNING
+        warnings.append(NSF_MAXWELL_WARNING)
+    from .patch_results import mass_flow_inlet_rows
+    for inlet in mass_flow_inlet_rows(summary):
+        error = inlet["mass_flow_relative_error"]
+        if error is None:
+            warnings.append(f"質量流量入口 {inlet['patch']}: 目標との相対誤差を確認できません")
+        elif error > 0.001:
+            warnings.append(f"質量流量入口 {inlet['patch']}: 目標との相対誤差 {error * 100:.6g}% が 0.1% を超えています"
+                            "(未収束・停止時の値を確認してください)")
+    d = summary.get("conservation_diagnostics") or {}
+
+    def fmt(value):
+        return f"{value:.6g}" if isinstance(value, (float, int)) else "未計算"
+
+    if d.get("warning"):
+        prefix = "残差では収束扱いだが、" if summary.get("converged") else "未収束で、"
+        diff = d.get("relative_imbalance")
+        warnings.append(prefix + "補正後の質量の保存がずれている"
+                        f"(入口 {fmt(d.get('inlet_kg_s'))} kg/s、出口 {fmt(d.get('outlet_kg_s'))} kg/s、"
+                        f"差 {fmt(diff * 100 if isinstance(diff, (float, int)) else None)} %)")
+    mb = summary.get("mass_balance") or {}
+    tolerance = mb.get("tolerance", 0.002)
+    for key in ("kinetic", "pbc", "kinetic_half"):
+        check = mb.get(key) or {}
+        if check.get("checked") and any(isinstance(check.get(k), (int, float)) and abs(check[k]) > tolerance
+                                       for k in ("imbalance", "section_spread")):
+            warnings.append(f"mass_balance ({key}): 質量の釣り合い・断面流量の差が許容値を超えています"
+                            f"(差 {fmt(check.get('imbalance'))}、断面ばらつき {fmt(check.get('section_spread'))})")
+    if d.get("warning") and d.get("last_pbc_correction"):
+        correction = d["last_pbc_correction"]
+        warnings.append("last_pbc_correction: " + "、".join(f"{k}={fmt(correction.get(k))}" for k in ("epsilon", "rho", "u", "T")))
+    return warnings
 
 
 def load_run(directory: str | Path, root: Path | None = None) -> RunResult:

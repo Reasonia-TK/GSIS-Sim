@@ -16,6 +16,24 @@ FIELDS = {"diffuse_wall": ("temperature", "velocity"),
           "pressure_outlet": ("pressure",), "vacuum": (),
           "mass_flow_inlet": ("mass_flow", "temperature", "tangential_velocity"), "symmetry": ()}
 DEFAULT_PATCH = "default_wall"
+NSF_MAXWELL_WARNING = ("NSF の α < 1 の壁は半空間 Maxwell 混合の PBC 境界です。"
+                       "連続体のすべり・温度跳躍の定量精度は保証されません。"
+                       "完全拡散壁の既定 NSF すべり係数を α < 1 に流用しないでください")
+
+
+def boundary_notes(settings, boundaries):
+    """境界の組み合わせによる注意。基準圧力は入口の指定圧力とは区別する。"""
+    notes = []
+    if any(b.get("type") == "mass_flow_inlet" for b in boundaries):
+        notes.append(f"質量流量入口の初期 p_b = p_ref = {settings.p_ref:.6g} Pa。"
+                     "パッチ全体の目標流量に合わせて反復中に圧力を更新します")
+        if not any(b.get("type") in ("pressure_inlet", "pressure_outlet") for b in boundaries):
+            notes.append("圧力を指定する境界がないため、設定画面の基準圧力 p_ref を初期値として保持します。"
+                         "質量流量からの自動推定はしません。真空は指定圧力境界に数えません")
+    if settings.mode == "nsf" and any(b.get("type") == "maxwell_wall" and b.get("accommodation", 1) < 1
+                                      for b in boundaries):
+        notes.append(NSF_MAXWELL_WARNING)
+    return notes
 
 
 def fingerprint(face):
@@ -89,7 +107,7 @@ def validate_boundary(b, faces):
                                       or not all(isinstance(v, (float, int)) and math.isfinite(v) for v in value)):
                 raise ValueError("壁速度は有限の x, y, z 成分にしてください")
         elif key == "tangential_velocity":
-            if value not in ("extrapolate", "zero"):
+            if value is not None and value not in ("extrapolate", "zero"):
                 raise ValueError("接線速度は extrapolate または zero を選んでください")
         elif key == "pressure" and kind == "pressure_outlet":
             if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:

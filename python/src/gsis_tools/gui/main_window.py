@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSizePolicy,
@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog
 from .context import AppContext
 from .geometry import prepare_geometry
 from .boundaries import remap_boundaries, with_default
-from .general_mesh import mesh_memory
+from .general_mesh import apply_tetrahedron_defaults
+from .check_case import CheckCaseJob, grid_warnings, TET_WARNING
 from .examples import create_tube_project, mesh_geometry
 from .pages.boundaries_page import BoundariesPage
 from .pages.mesh_page import MeshPage
@@ -75,6 +76,13 @@ class MainWindow(QMainWindow):
         self.mesh_page = MeshPage(ctx, view_backend=view_backend)
         self.run_page = RunPage(ctx)
         self.results_page = ResultsPage(ctx, view_backend=view_backend)
+        self.check_job = CheckCaseJob(self)
+        self.check_job.completed.connect(self._checked)
+        self.check_timer = QTimer(self)
+        self.check_timer.setSingleShot(True)
+        self.check_timer.setInterval(350)
+        self.check_timer.timeout.connect(self._check_inputs)
+        ctx.solver_changed.connect(self._schedule_check)
         self.pages = dict(zip(STAGES, (self.geometry_page, self.settings_page, self.boundaries_page,
                                       self.mesh_page, self.run_page, self.results_page)))
         for key, label in PAGES:
@@ -214,6 +222,7 @@ class MainWindow(QMainWindow):
 
     def _change(self, stage):
         self.project.change(stage)
+        self._schedule_check()
         if stage == "geometry":
             self.project.geometry["accepted"] = False
             gp = self.geometry_page
@@ -237,6 +246,42 @@ class MainWindow(QMainWindow):
             message += " / 引き継げなかった面: " + "、".join(lost)
             self.geometry_page.note.set_status("warning", message)
         self.show_status(message)
+        self._schedule_check()
+
+    def _schedule_check(self):
+        self.check_job.cancel()
+        self.project.__dict__.pop("_solver_check", None)
+        self.settings_page.check_panel.setPlainText("C++ 入力検査: 更新待ち…")
+        self.mesh_page.check_panel.setPlainText("C++ 入力検査: 更新待ち…")
+        self.check_timer.start()
+
+    def _check_inputs(self):
+        self.check_timer.stop()
+        if self.run_page.busy or self.mesh_page.busy:
+            return
+        self._checked_project = self.project
+        self._checked_settings = self.project.settings
+        try:
+            self.project.settings = self.settings_page.collect()
+            self._checked_project = self.project
+            self._checked_settings = self.project.settings
+            self.check_job.start(self.ctx.solver_path(), self.project,
+                                 no_mesh=self.project.stages["mesh"] != "done")
+        except (ValueError, OSError, TypeError) as exc:
+            self._checked(dict(ok=False, errors=[str(exc)], warnings=[]))
+
+    def _checked(self, result):
+        if getattr(self, "_checked_project", None) is not self.project:
+            return
+        result["warnings"] = list(result.get("warnings", [])) + grid_warnings(self._checked_settings, result)
+        if self.project.mesh.get("contains_tetrahedra") and self.project.settings.mode == "gsis":
+            result["warnings"].append(TET_WARNING)
+        self.project._solver_check = result
+        self.settings_page.check_panel.present(result)
+        self.mesh_page.check_panel.present(result)
+        if self.mesh_page.result and result.get("mesh_loaded"):
+            self.mesh_page.present(self.mesh_page.result)
+        self.refresh_workflow()
 
     def _settings_changed(self):
         self._change("settings")
@@ -275,13 +320,11 @@ class MainWindow(QMainWindow):
         self.show_page("mesh")
 
     def _mesh_ready(self, result):
+        apply_tetrahedron_defaults(self.project)
         self.settings_page.load_settings(self.project.settings)
-        memory = mesh_memory(self.project, result["cells"])
-        if memory["fits"]:
-            self.project.mesh["validated"] = True
-            self.project.complete("mesh")
-        else:
-            self.project.mesh.pop("validated", None)
+        # 品質の完了と予算判定は分け、概算で C++ の検査を妨げない。
+        self.project.mesh["validated"] = True
+        self.project.complete("mesh")
         # 未保存プロジェクトでも生成結果と case.toml を作業領域に保持する。
         error = None
         try:
@@ -291,8 +334,7 @@ class MainWindow(QMainWindow):
             if not self._saved:
                 # 一時領域の自動出力は、ユーザーが保存先を選んだことにはしない。
                 self.project.dirty = True
-            if memory["fits"]:
-                self.run_page.bind_project(self.project)
+            self.run_page.bind_project(self.project)
         except (ValueError, OSError, TypeError) as exc:
             self.project.change("mesh")
             error = f"ケースを保存できません: {exc}"
@@ -301,6 +343,7 @@ class MainWindow(QMainWindow):
             self.mesh_page.note.set_status("error", error)
             self.show_status(error)
         self.refresh_workflow()
+        self._schedule_check()
 
     def _rename(self, text):
         self.project.name = text
@@ -359,6 +402,7 @@ class MainWindow(QMainWindow):
 
     def _install_project(self, p, result=None):
         self.project = self.ctx.project = p
+        apply_tetrahedron_defaults(p)
         self._saved = True
         self.name_field.blockSignals(True)
         self.name_field.setText(p.name)
@@ -395,6 +439,7 @@ class MainWindow(QMainWindow):
         self.show_page("geometry")
         if p.stages["mesh"] == "done":
             self.run_page.bind_project(p)
+        self._schedule_check()
 
     def save(self, directory=None):
         if self.run_page.busy:
@@ -494,6 +539,8 @@ class MainWindow(QMainWindow):
         if self._closed:
             return
         self.run_page.shutdown()
+        self.check_timer.stop()
+        self.check_job.cancel()
         self.geometry_page.shutdown()
         self.boundaries_page.shutdown()
         self.mesh_page.shutdown()
