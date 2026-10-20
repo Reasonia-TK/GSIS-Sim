@@ -104,3 +104,11 @@ add_test(NAME s2_cli:check_json
     "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/s2/check" -DMODE=cis -DSCENARIO=check
     -P "${CMAKE_CURRENT_SOURCE_DIR}/s2_cli.cmake")
 set_tests_properties(s2_cli:check_json PROPERTIES FIXTURES_REQUIRED cli_meshes)
+foreach(_mode cis gsis nsf)
+  add_test(NAME s3_cli:${_mode}
+    COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:gsis-solver>"
+      "-DCASE=${CMAKE_BINARY_DIR}/tests/kinetic/cli/cis_smoke.toml"
+      "-DOUT=${CMAKE_BINARY_DIR}/tests/s3_${_mode}" "-DMODE=${_mode}"
+      -P "${PROJECT_SOURCE_DIR}/tests/s3_cli.cmake")
+  set_tests_properties(s3_cli:${_mode} PROPERTIES FIXTURES_REQUIRED cli_meshes)
+endforeach()

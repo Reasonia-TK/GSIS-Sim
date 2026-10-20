@@ -213,6 +213,9 @@ static int run_pbc_case(std::span<const std::string> args, const CaseConfig* con
   print_item("閉じた領域", solver.closed_domain() ? "はい(全質量を初期値に保つ)" : "いいえ");
   print_item("出力先", path_to_utf8(out_dir));
 
+  for (const auto& b : cfg.boundaries) if (b.type == BoundaryType::MaxwellWall && b.accommodation < 1.0) {
+    log_warn("NSFのMaxwell壁は半空間PBC境界です。連続体の高精度なすべり・温度跳躍条件ではありません");
+  }
   // 履歴
   std::vector<std::string> header = {"iteration",   "cfl", "residual_mass", "residual_momentum", "residual_energy",
                                      "kinetic_energy_defect", "residual_temperature", "update_p", "update_u",
@@ -222,6 +225,7 @@ static int run_pbc_case(std::span<const std::string> args, const CaseConfig* con
   for (const Patch& p : mesh.patches) header.push_back("mdot_" + p.name);
   header.push_back("seconds");
   header.push_back("elapsed_seconds");
+  for (const auto& b : cfg.boundaries) if (b.mass_flow) header.push_back("p_b_"+b.patch+"_Pa");
   CsvWriter history(out_dir / "history.csv", header);
   history.set_autoflush(true);
   Timer run_timer;
@@ -246,6 +250,10 @@ static int run_pbc_case(std::span<const std::string> args, const CaseConfig* con
     for (double m : it.patch_mass_flow) row.emplace_back(m);
     row.emplace_back(it.seconds);
     row.emplace_back(run_timer.seconds());
+    for (const auto& b : cfg.boundaries) if (b.mass_flow) {
+      const auto p = static_cast<std::size_t>(mesh.find_patch(b.patch));
+      row.emplace_back(solver.boundary_conditions()[p].pressure*d.ref.pressure);
+    }
     history.write_row(std::span<const CsvValue>(row));
     if ((it.iteration + 1) % opt.print_every == 0 || it.iteration == 0) {
       log_info("反復 {:5d}: CFL {:.3g}、残差(質量 {:.3e}、運動量 {:.3e}、エネルギー {:.3e})、更新量 {:.3e}、"
@@ -379,6 +387,16 @@ static int run_pbc_case(std::span<const std::string> args, const CaseConfig* con
     json::Value e;
     e.set("name", mesh.patches[p].name);
     e.set("type", macro::to_string(solver.boundary_conditions()[p].kind));
+    const auto* spec = cfg.find_boundary(mesh.patches[p].name);
+    if (spec && (spec->type == BoundaryType::MaxwellWall || spec->type == BoundaryType::MassFlowInlet)) {
+      e.set("type",to_string(spec->type));
+      if (spec->type == BoundaryType::MaxwellWall) e.set("accommodation",spec->accommodation);
+      if (spec->mass_flow) {
+        e.set("pressure_Pa",solver.boundary_conditions()[p].pressure*ref.pressure);
+        e.set("target_mass_flow_kg_s",*spec->mass_flow);
+        e.set("mass_flow_relative_error",std::abs(-flow_nd[p]*mass_flow_si-*spec->mass_flow)/ *spec->mass_flow);
+      }
+    }
     e.set("mass_flow_nondim", flow_nd[p]);
     e.set("mass_flow_kg_s", flow_nd[p] * mass_flow_si);
     // 外向きの運動量流束(流体がパッチに及ぼす力)とエネルギー流束(流体からパッチへ出る熱と仕事)

@@ -18,6 +18,7 @@ json::Value estimate(const KineticSetup& s, std::int64_t free_bytes) {
       static_cast<std::int64_t>(s.csr.faces.size()) * sizeof(CsrEntry<F>) + nc * sizeof(F) +
       static_cast<std::int64_t>(s.n_bfaces()) * sizeof(BoundaryFaceInfo<F>) + nb * sizeof(BoundaryInflow<F>) +
       nc * sizeof(CellParams<F>) + (s.n_blocks() + 1LL) * 4 + nc * (31 * 8 + 4) + nb * 20 * 8 +
+      (s.n_maxwell_faces > 0 ? 2LL * s.n_maxwell_faces * nv * sizeof(F) + s.n_bfaces() * sizeof(MaxwellFace) + nv * 4 : 0) +
       (s.n_sweep_dirs > 0 ? 2LL * s.n_sweep_dirs * nc * 4 + nv : 0);
   auto workspace = [&](std::int64_t k) -> std::int64_t {
     return 4LL * static_cast<std::int64_t>(sizeof(F)) * nc * k + nc * ((k + 255) / 256) * 8;

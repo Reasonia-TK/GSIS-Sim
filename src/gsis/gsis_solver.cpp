@@ -170,13 +170,14 @@ const GsisIterationInfo& GsisSolver::iterate(const std::function<void(const PbcI
   Timer total;
   GsisIterationInfo info;
 
+  kinetic_.update_mass_flow_pressure();
   // 1. CIS: f^n → f^{n+1/2}
   Timer t;
   double residual = 0.0;
   bool has_residual = false;
   kinetic::StepTimings cis_timings;
   for (int l = 0; l < options_.n_cis; ++l) {
-    const KineticIterationInfo& s = kinetic_.sweep();
+    const KineticIterationInfo& s = kinetic_.sweep(false);
     residual = s.residual;
     has_residual = s.has_residual;
     cis_timings += s.timings;
@@ -199,6 +200,10 @@ const GsisIterationInfo& GsisSolver::iterate(const std::function<void(const PbcI
   // 3. PBC 段(HoT は段の間は固定、境界は整合補正つき)
   t.reset();
   CellMacroState w_new;
+  for (std::size_t p = 0; p < kinetic_.setup().patches.size(); ++p) {
+    const auto& pc = kinetic_.setup().patches[p];
+    if (pc.type == BoundaryType::MassFlowInlet) pbc_.set_patch_pressure(p,pc.p);
+  }
   info.pbc = pbc_.solve_gsis_stage(m, fb, options_.max_pbc, options_.cfl_pbc, w_new, on_pbc_iteration);
   info.patch_mass_flow_pbc = info.pbc.final_patch_mass_flow;
   if (!pbc_cuts_.empty()) {

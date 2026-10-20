@@ -55,6 +55,10 @@ def free_molecular(pr: Problem) -> FreeMolecular:
     s2p = np.sqrt(2.0 * np.pi)
     Pxy = C * (pr.u_L - pr.u_R) / s2p
     Qtot = C * ((2 * pr.T_L + 0.5 * pr.u_L**2) - (2 * pr.T_R + 0.5 * pr.u_R**2)) / s2p
+    if pr.accommodation != 1.0:
+        factor = pr.accommodation / (2.0 - pr.accommodation)
+        Pxy *= factor
+        Qtot *= factor
     qx = Qtot - uy * Pxy
     return FreeMolecular(nL=nL, nR=nR, rho=rho, uy=uy, T=T, Pxy=Pxy, qx=qx, Qtot=Qtot)
 
@@ -90,6 +94,8 @@ def nsf_slip(
     σ_P, ζ_T を省略すると、Pr = 1 なら BGK、Pr = 2/3 なら S モデルの文献値を使う
     (sigma_P = zeta_T = 0 なら跳躍なし)。
     """
+    if pr.accommodation != 1.0 and (sigma_P is None or zeta_T is None):
+        raise ValueError("部分適応壁のNSF比較には対応するsigma_Pとzeta_Tを明示してください")
     is_bgk = abs(pr.Pr - 1.0) < 1e-12
     if sigma_P is None:
         sigma_P = SIGMA_P_BGK if is_bgk else SIGMA_P_S

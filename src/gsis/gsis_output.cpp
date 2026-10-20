@@ -19,7 +19,7 @@ TubeMassFlow tube_mass_flow(const kinetic::KineticSetup& setup, const std::vecto
   double out = 0.0;
   for (std::size_t p = 0; p < setup.patches.size() && p < flow_nd.size(); ++p) {
     const BoundaryType t = setup.patches[p].type;
-    if (t == BoundaryType::PressureInlet) {
+    if ((t == BoundaryType::PressureInlet || t == BoundaryType::MassFlowInlet)) {
       in -= flow_nd[p];
       m.has_inlet = true;
     } else if (t == BoundaryType::PressureOutlet || t == BoundaryType::Vacuum) {
@@ -64,6 +64,7 @@ GsisHistoryWriter::GsisHistoryWriter(const std::filesystem::path& path, const ki
                         "t_pbc_linear_s", "filter_iterations", "t_filter_s", "gpu_memory_bytes"}) {
     h.emplace_back(c);
   }
+  for (const auto& pc : setup.patches) if (pc.type == BoundaryType::MassFlowInlet) h.push_back("p_b_"+pc.name+"_Pa");
   csv_ = std::make_unique<CsvWriter>(path, std::move(h));
   csv_->set_autoflush(true);
 }
@@ -144,6 +145,7 @@ void GsisHistoryWriter::write(const GsisIterationInfo& it, double elapsed_total_
   row.emplace_back(static_cast<std::int64_t>(it.filter.linear_iterations));
   row.emplace_back(it.t_filter);
   row.emplace_back(static_cast<std::int64_t>(gpu_memory_bytes_));
+  for (const auto& pc : setup_.patches) if (pc.type == BoundaryType::MassFlowInlet) row.emplace_back(pc.p*setup_.derived.ref.pressure);
   csv_->write_row(std::span<const CsvValue>(row));
 }
 

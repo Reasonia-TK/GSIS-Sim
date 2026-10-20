@@ -259,6 +259,18 @@ __global__ void __launch_bounds__(kDeqThreads)
   }
 }
 
+template <bool Reconstruct, class F>
+__global__ void k_maxwell_reflection(KineticView<F> v, int b0) {
+  const int b = b0 + static_cast<int>(blockIdx.y);
+  const int p = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  if (p >= v.nv || v.maxwell[b].offset < 0) return;
+  const auto bf = v.bfaces[b];
+  const auto xi = velocity_at(v, p);
+  F* buffer = Reconstruct ? v.specular : v.specular_first;
+  buffer[v.maxwell[b].offset + p] = dot(xi, Vec3T<F>{bf.nx,bf.ny,bf.nz}) < F(0)
+      ? reflected_value<Reconstruct>(v, bf, p, xi) : F(0);
+}
+
 template <class F>
 __global__ void __launch_bounds__(kBoundaryThreads) k_boundary_sums(KineticView<F> v, double* __restrict__ out,
                                                                     int b0) {
@@ -290,7 +302,7 @@ __global__ void __launch_bounds__(kBoundaryThreads) k_boundary_sums(KineticView<
       if (valid && !out_side) fb = sh_out[(p ^ bf.mirror_xor) - p0];
       __syncthreads();
     } else if (valid && !out_side) {
-      fb = maxwellian(m_in, xi);  // 単位(scale を掛けない)
+      fb = bf.kind == kBcMaxwellWall ? maxwell_inflow(v, b, p, xi) : maxwellian(m_in, xi);  // 単位(scale を掛けない)
     }
     if (valid) {
       if (out_side) {
@@ -554,6 +566,18 @@ void launch_cell_params_deq(const KineticView<F>& v, const double* moments, cons
 }
 
 template <class F>
+void launch_maxwell_reflection(const KineticView<F>& v) {
+  for (int b0 = 0; b0 < v.n_bfaces; b0 += 16) {
+    const dim3 grid((v.nv + 127) / 128, std::min(16, v.n_bfaces - b0));
+    k_maxwell_reflection<false,F><<<grid, 128>>>(v, b0);
+  }
+  for (int b0 = 0; b0 < v.n_bfaces; b0 += 16) {
+    const dim3 grid((v.nv + 127) / 128, std::min(16, v.n_bfaces - b0));
+    k_maxwell_reflection<true,F><<<grid, 128>>>(v, b0);
+  }
+}
+
+template <class F>
 void launch_boundary_sums(const KineticView<F>& v, double* out, int b0, int nb) {
   if (nb <= 0) return;
   k_boundary_sums<F><<<nb, kBoundaryThreads>>>(v, out, b0);
@@ -626,6 +650,7 @@ void launch_gsis_correction(const KineticView<F>& v, const double* w_half, const
                                       CellParams<F>*, int, double);                                                \
   template void launch_cell_params_deq<F>(const KineticView<F>&, const double*, const double*, const double*,   \
                                           double, double, double, CellParams<F>*, int*, int, int);               \
+  template void launch_maxwell_reflection<F>(const KineticView<F>&);                                           \
   template void launch_boundary_sums<F>(const KineticView<F>&, double*, int, int);                               \
   template void launch_internal_face_mass_flux<F>(const KineticView<F>&, const std::int32_t*, const std::int32_t*, \
                                                   double*, int, int);                                            \

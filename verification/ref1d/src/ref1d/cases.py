@@ -25,8 +25,9 @@ CASE_TYPES: dict[str, dict] = {
 KN_LIST = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
 
 
-def make_problem(case: str, Kn: float, omega: float = 0.66, Pr: float = 2.0 / 3.0) -> Problem:
-    return Problem(Kn=Kn, omega=omega, Pr=Pr, name=case, **CASE_TYPES[case])
+def make_problem(case: str, Kn: float, omega: float = 0.66, Pr: float = 2.0 / 3.0,
+                 accommodation: float = 1.0) -> Problem:
+    return Problem(Kn=Kn, omega=omega, Pr=Pr, name=case, accommodation=accommodation, **CASE_TYPES[case])
 
 
 def kn_tag(Kn: float) -> str:
@@ -67,6 +68,7 @@ def summarize(r: Result) -> dict:
         u_R=pr.u_R,
         omega=pr.omega,
         Pr=pr.Pr,
+        accommodation=pr.accommodation,
         # 熱流束(x 方向)。厳密解では熱伝導ケースで一様
         qx_mean=float(wq @ qx),
         qx_wallL=float(qx[0]),
@@ -141,6 +143,8 @@ def write_profile(r: Result, path: Path, extra_header: list[str] | None = None) 
     ]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         fh.write(f"# case={pr.name} Kn={pr.Kn:g} delta={pr.delta:.10g} T_L={pr.T_L:g} T_R={pr.T_R:g} u_L={pr.u_L:g} u_R={pr.u_R:g} omega={pr.omega:g} Pr={pr.Pr:.10g}\n")
+        if pr.accommodation != 1.0:
+            fh.write(f"# accommodation={pr.accommodation:g}\n")
         fh.write(f"# grid: {r.mesh.describe()} / {r.vgrid.describe()} / p={r.p}\n")
         # データファイルはどの環境(既定の文字コードが CP932 など)でも読めるように ASCII だけで書く
         fh.write("# nondimensional: x/L, rho/rho0, u/sqrt(R T0), T/T0, p/p0 (p0 = rho0 R T0, p = rho T), q/(p0 sqrt(R T0)), P_ij/p0\n")

@@ -22,8 +22,10 @@ inline std::size_t zu(Offset i) { return static_cast<std::size_t>(i); }
 
 MacroBoundaryKind to_macro_kind(BoundaryType t) {
   switch (t) {
+    case BoundaryType::MaxwellWall:
     case BoundaryType::DiffuseWall:
       return MacroBoundaryKind::DiffuseWall;
+    case BoundaryType::MassFlowInlet:
     case BoundaryType::PressureInlet:
       return MacroBoundaryKind::PressureInlet;
     case BoundaryType::PressureOutlet:
@@ -181,11 +183,15 @@ PbcSolver PbcSolver::from_case(const CaseConfig& config, const DerivedQuantities
     MacroBoundaryCondition bc;
     bc.kind = to_macro_kind(s->type);
     switch (s->type) {
+      case BoundaryType::MaxwellWall:
       case BoundaryType::DiffuseWall:
+        bc.accommodation = s->accommodation;
         bc.temperature = *s->temperature / ref.temperature;
         if (s->velocity) bc.velocity = *s->velocity / ref.velocity;
         break;
+      case BoundaryType::MassFlowInlet:
       case BoundaryType::PressureInlet:
+        bc.target_mass_flow = s->mass_flow.value_or(0.0) / (ref.mass_flux*ref.length*ref.length);
         bc.temperature = *s->temperature / ref.temperature;
         bc.pressure = (s->pressure ? *s->pressure : derived.p_in) / ref.pressure;
         bc.zero_tangential = s->inlet_zero_tangential;
@@ -1190,6 +1196,27 @@ PbcStageReport PbcSolver::run_stage(const PbcStageInput& input, const PbcStageOp
                    std::isfinite(info.residual_energy),
                std::format("PBC の反復 {} で残差が有限でなくなりました(発散)", m));
     info.patch_mass_flow = patch_mass_flow();
+    if (standalone_) {
+      bool changed = false;
+      for (std::size_t p = 0; p < patch_bc_.size(); ++p) {
+        auto& bc = patch_bc_[p];
+        if (!(bc.target_mass_flow > 0.0)) continue;
+        double D = 0.0;
+        for (Index f = mesh_.patches[p].start; f < mesh_.patches[p].end(); ++f) {
+          D += geo_.face_area[zu(f)]*(1.0/std::sqrt(2.0*kPi*bc.temperature)+
+               0.5/std::sqrt(kGamma*W_[4][zu(mesh_.owner[zu(f)])]));
+        }
+        GSIS_CHECK(D > 0.0, "質量流量入口の面積が0です");
+        const double dp = 0.2*(bc.target_mass_flow+info.patch_mass_flow[p])/D;
+        bc.pressure = std::max(1e-12,bc.pressure+std::clamp(dp,-0.1*bc.pressure,0.1*bc.pressure));
+        changed = true;
+      }
+      if (changed) {
+        evaluate();
+        residual_norms(info.residual_mass,info.residual_momentum,info.residual_energy,info.kinetic_energy_defect);
+        info.patch_mass_flow = patch_mass_flow();
+      }
+    }
     if (m == 0) {
       report.initial_residual_mass = info.residual_mass;
       // 診断用: W⁰ の残差と、セルを通る質量流量
@@ -1358,7 +1385,17 @@ PbcStageReport PbcSolver::run_stage(const PbcStageInput& input, const PbcStageOp
     GSIS_CHECK(std::isfinite(info.update_max()),
                std::format("PBC の反復 {} で更新量が有限でなくなりました(発散)", m));
     report.stopped = options.should_stop && options.should_stop();
-    if (info.update_max() < options.tolerance) {
+    bool target_ok = true;
+    if (standalone_) {
+      // 最終候補の状態で判定する。既存ケースでは追加評価しない。
+      for (const auto& bc : patch_bc_) if (bc.target_mass_flow > 0.0) { evaluate(); break; }
+      const auto flow = patch_mass_flow();
+      for (std::size_t p = 0; p < patch_bc_.size(); ++p) {
+        const double target = patch_bc_[p].target_mass_flow;
+        if (target > 0.0 && std::abs(flow[p]+target) > 1e-3*target) target_ok = false;
+      }
+    }
+    if (info.update_max() < options.tolerance && target_ok) {
       report.converged = true;
       break;
     }

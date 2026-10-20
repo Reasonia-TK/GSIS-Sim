@@ -56,8 +56,11 @@ class Problem:
     omega: float = 0.66
     Pr: float = 2.0 / 3.0  # Pr = 1 で BGK モデル
     name: str = ""
+    accommodation: float = 1.0  # 両壁に共通のMaxwell適応係数
 
     def __post_init__(self):
+        if not 0.0 < self.accommodation <= 1.0:
+            raise ValueError("accommodation は 0 より大きく 1 以下にすること")
         if abs(0.5 * (self.T_L + self.T_R) - 1.0) > 1e-12:
             raise ValueError("T0 = (T_L + T_R)/2 = 1 となるように無次元化すること")
 
@@ -187,6 +190,38 @@ class Solver:
         nR = (jL * (-aR) - bR * (-aL)) / det
         return nL, nR
 
+    def _maxwell_walls(self, s: np.ndarray) -> tuple[float, float]:
+        """壁間の全ての鏡面往復を解析的に足し、零質量流束の2元連立系を解く。"""
+        alpha = self.problem.accommodation
+        r = 1.0 - alpha
+        x = self.xi[self.pos]
+        w = self.w[self.pos] * x
+        e = np.exp(-s[-1] / x)[:, None]
+        den = 1.0 - r * r * e * e
+        A = self.GA[self.pos, self.N, :]
+        B = self.GA[self.neg, 0, :][::-1]
+        HL = self.HL[self.pos]
+        HR = self.HR[self.neg][::-1]
+        L0, R0 = (r * B + r*r*e*A) / den, (r * A + r*r*e*B) / den
+        LL, LR = alpha*HL/den, r*e*alpha*HR/den
+        RL, RR = r*e*alpha*HL/den, alpha*HR/den
+
+        def flux(a):
+            return float(w @ a[:, 0])
+
+        matrix = np.array([[flux(LL-e*RL), flux(LR-e*RR)],
+                           [flux(e*LL-RL), flux(e*LR-RR)]])
+        rhs = -np.array([flux(L0-B-e*R0), flux(A+e*L0-R0)])
+        if self.free_molecular:
+            nL, nR = 1.0 / self.jL, 1.0 / self.jR
+        else:
+            nL, nR = np.linalg.solve(matrix, rhs)
+        left, right = np.zeros_like(self.HL), np.zeros_like(self.HR)
+        left[self.pos] = L0 + nL*LL + nR*LR
+        right[self.neg] = (R0 + nL*RL + nR*RR)[::-1]
+        K.add_wall(self.G, s, self.xi, left, right, 1.0, 1.0)
+        return float(nL), float(nR)
+
     def phi(self, prim: np.ndarray) -> np.ndarray:
         """不動点写像 Φ。prim (N+1, 6) → 新しい prim。self.G, self.mom も更新する。"""
         self.n_phi += 1
@@ -203,9 +238,12 @@ class Solver:
             Vp, Vn = self._vinv(s, ds)
             K.target(self.xi, np.ascontiguousarray(prim), self.a_coef, self.GS)
             K.sweep(self.xi, ds, self.GS, self.st_pos, self.st_neg, Vp, Vn, self.p, self.GA)
-        nL, nR = self._wall_densities(s)
         self.G[:] = self.GA
-        K.add_wall(self.G, s, self.xi, self.HL, self.HR, nL, nR)
+        if self.problem.accommodation == 1.0:
+            nL, nR = self._wall_densities(s)
+            K.add_wall(self.G, s, self.xi, self.HL, self.HR, nL, nR)
+        else:
+            nL, nR = self._maxwell_walls(s)
         K.moments(self.xi, self.w, self.G, self.mom)
         mass = float(self.wq @ self.mom[:, K.RHO])
         c = 1.0 / mass

@@ -29,6 +29,10 @@ std::string_view to_string(SolverMode mode) {
 
 std::string_view to_string(BoundaryType type) {
   switch (type) {
+    case BoundaryType::MaxwellWall:
+      return "maxwell_wall";
+    case BoundaryType::MassFlowInlet:
+      return "mass_flow_inlet";
     case BoundaryType::DiffuseWall:
       return "diffuse_wall";
     case BoundaryType::PressureInlet:
@@ -363,6 +367,8 @@ void parse_conditions_section(const toml::node& node, CaseConfig& cfg) {
 }
 
 BoundaryType parse_boundary_type(const std::string& s, const std::string& name) {
+  if (s == "maxwell_wall") return BoundaryType::MaxwellWall;
+  if (s == "mass_flow_inlet") return BoundaryType::MassFlowInlet;
   if (s == "diffuse_wall") return BoundaryType::DiffuseWall;
   if (s == "pressure_inlet") return BoundaryType::PressureInlet;
   if (s == "pressure_outlet") return BoundaryType::PressureOutlet;
@@ -386,13 +392,23 @@ void parse_boundary_array(const toml::node& node, CaseConfig& cfg) {
     GSIS_CHECK(!b.patch.empty(), std::format("{}.patch が空です", name));
     b.type = parse_boundary_type(r.get_string("type"), name);
     switch (b.type) {
+      case BoundaryType::MaxwellWall:
+        b.accommodation = r.get_number("accommodation");
+        GSIS_CHECK(b.accommodation > 0.0 && b.accommodation <= 1.0, name + ".accommodation は 0 より大きく 1 以下です");
+        [[fallthrough]];
       case BoundaryType::DiffuseWall:
         b.temperature = r.get_number("temperature");
         b.velocity = r.opt_vec3("velocity");
         break;
+      case BoundaryType::MassFlowInlet:
       case BoundaryType::PressureInlet: {
         b.temperature = r.get_number("temperature");
-        b.pressure = r.opt_number("pressure");
+        if (b.type == BoundaryType::MassFlowInlet) {
+          b.mass_flow = r.get_number("mass_flow");
+          require_positive(*b.mass_flow, name + ".mass_flow");
+        } else {
+          b.pressure = r.opt_number("pressure");
+        }
         const std::string tv = r.opt_string("tangential_velocity").value_or("extrapolate");
         GSIS_CHECK(tv == "extrapolate" || tv == "zero",
                    std::format("{}.tangential_velocity は \"extrapolate\" か \"zero\" です(値: \"{}\")", name, tv));

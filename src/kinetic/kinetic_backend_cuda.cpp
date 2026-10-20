@@ -113,6 +113,12 @@ class CudaBackend final : public KineticBackend {
     upload(eps2_, make_eps2<F>(s));
     upload(bfaces_, make_bface_infos<F>(s));
     binflow_.allocate(static_cast<std::size_t>(std::max(n_bfaces_, 1)));
+    if (s.n_maxwell_faces > 0) {
+      upload(maxwell_, s.maxwell);
+      upload(grid_to_storage_, s.velocity.grid_to_storage);
+      specular_.allocate(static_cast<std::size_t>(s.n_maxwell_faces) * nv_);
+      specular_first_.allocate(static_cast<std::size_t>(s.n_maxwell_faces) * nv_);
+    }
     cells_.allocate(static_cast<std::size_t>(n_cells_));
     upload(volume_, s.volume);
     upload(vdt_, s.vdt);
@@ -175,7 +181,7 @@ class CudaBackend final : public KineticBackend {
            binflow_.bytes() + cells_.bytes() + volume_.bytes() + vdt_.bytes() + block_offsets_.bytes() +
            moments_.bytes() + shift_.bytes() + residual_cell_.bytes() + bsums_.bytes() + f_.bytes() + gx_.bytes() * 4 +
            partial_.bytes() + w_half_.bytes() * 2 + flags_.bytes() + sweep_order_.bytes() + sweep_pos_.bytes() +
-           sweep_dir_of_.bytes();
+           sweep_dir_of_.bytes() + maxwell_.bytes() + grid_to_storage_.bytes() + specular_.bytes() + specular_first_.bytes();
   }
 
   void set_equilibrium(std::span<const double> states) override {
@@ -272,6 +278,7 @@ class CudaBackend final : public KineticBackend {
     if (n_bfaces_ == 0) return;
     timer_.begin(PhaseTimer::kBoundary);
     const KineticView<F> v = view();
+    if (s_.n_maxwell_faces > 0) cuda::launch_maxwell_reflection(v);
     for (int b0 = 0; b0 < n_bfaces_; b0 += kBoundaryFacesPerLaunch) {
       cuda::launch_boundary_sums(v, bsums_.data(), b0, std::min(kBoundaryFacesPerLaunch, n_bfaces_ - b0));
     }
@@ -439,6 +446,13 @@ class CudaBackend final : public KineticBackend {
     v.binflow = binflow_.data();
     v.cells = cells_.data();
     v.f = f_.data();
+    if (s_.n_maxwell_faces > 0) {
+      v.maxwell = maxwell_.data();
+      v.specular = specular_.data();
+      v.specular_first = specular_first_.data();
+      v.grid_to_storage = grid_to_storage_.data();
+      for (int a = 0; a < 3; ++a) v.grid_n[a] = s_.grid_n[a];
+    }
     v.n_sweep_dirs = s_.n_sweep_dirs;
     if (s_.n_sweep_dirs > 0) {
       v.sweep_order = sweep_order_.data();
@@ -467,6 +481,9 @@ class CudaBackend final : public KineticBackend {
   DeviceBuffer<CsrEntry<F>> csr_;
   DeviceBuffer<F> eps2_;
   DeviceBuffer<BoundaryFaceInfo<F>> bfaces_;
+  DeviceBuffer<MaxwellFace> maxwell_;
+  DeviceBuffer<int> grid_to_storage_;
+  DeviceBuffer<F> specular_, specular_first_;
   DeviceBuffer<BoundaryInflow<F>> binflow_;
   DeviceBuffer<CellParams<F>> cells_;
   DeviceBuffer<double> volume_, vdt_;

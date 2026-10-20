@@ -285,7 +285,7 @@ int cmd_cis_run(std::span<const std::string> args) {
     const MassBalance mb = mass_balance(prep.patch_mass_flow);
     const bool balance_ok = !cfg.gsis.mass_balance_required || !mb.valid ||
                             std::abs(mb.imbalance) < cfg.gsis.mass_balance_tolerance;
-    if (prep.iteration >= opt.min_iter && prep.has_epsilon && prep.epsilon < tol && balance_ok) {
+    if (prep.iteration >= opt.min_iter && prep.has_epsilon && prep.epsilon < tol && balance_ok && mass_flow_targets_met(s,prep.patch_mass_flow)) {
       converged = true;
       last = prep;
       history.write(prep, total_timer.seconds(), sec);

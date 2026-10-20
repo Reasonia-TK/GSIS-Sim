@@ -142,9 +142,11 @@ int check_json(std::span<const std::string> args) {
       p.set("area_m2", nullptr);
       p.set("temperature_K", b.temperature ? json::Value(*b.temperature) : json::Value());
       p.set("pressure_Pa", b.pressure ? json::Value(*b.pressure) :
-            b.type == BoundaryType::PressureInlet ? json::Value(d.p_in) : json::Value());
+            (b.type == BoundaryType::PressureInlet || b.type == BoundaryType::MassFlowInlet) ? json::Value(d.p_in) : json::Value());
       p.set("velocity_m_s", b.velocity ? json::Value(json::Array{b.velocity->x, b.velocity->y, b.velocity->z}) : json::Value());
-      if (b.type == BoundaryType::PressureInlet) p.set("tangential_velocity", b.inlet_zero_tangential ? "zero" : "extrapolate");
+      if (b.type == BoundaryType::MaxwellWall) p.set("accommodation", b.accommodation);
+      if (b.mass_flow) p.set("target_mass_flow_kg_s", *b.mass_flow);
+      if (b.type == BoundaryType::PressureInlet || b.type == BoundaryType::MassFlowInlet) p.set("tangential_velocity", b.inlet_zero_tangential ? "zero" : "extrapolate");
       patches.push_back(std::move(p));
     }
     root.set("patches", std::move(patches));

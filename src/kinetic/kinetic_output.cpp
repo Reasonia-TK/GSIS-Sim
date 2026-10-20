@@ -12,6 +12,16 @@
 
 namespace gsis {
 
+bool mass_flow_targets_met(const kinetic::KineticSetup& s, std::span<const double> flow) {
+  for (std::size_t p = 0; p < s.patches.size(); ++p) {
+    const auto& pc = s.patches[p];
+    if (pc.type != BoundaryType::MassFlowInlet) continue;
+    if (p >= flow.size() || !std::isfinite(flow[p]) ||
+        std::abs(flow[p] + pc.target_mass_flow) > 1e-3*pc.target_mass_flow) return false;
+  }
+  return true;
+}
+
 double mass_flow_to_si(const kinetic::KineticSetup& setup, double nondimensional) {
   const ReferenceScales& r = setup.derived.ref;
   return nondimensional * r.mass_flux * r.length * r.length;
@@ -222,6 +232,12 @@ KineticPatchSummary summarize_kinetic_patches(const PolyMesh& mesh, const MeshGe
     json::Value pj;
     pj.set("name", patch.name);
     pj.set("type", std::string(to_string(pc->type)));
+    if (pc->type == BoundaryType::MaxwellWall) pj.set("accommodation",pc->accommodation);
+    if (pc->type == BoundaryType::MassFlowInlet) {
+      pj.set("pressure_Pa",pc->p*s.derived.ref.pressure);
+      pj.set("target_mass_flow_kg_s",mass_flow_to_si(s,pc->target_mass_flow));
+      pj.set("mass_flow_relative_error",std::abs(F[0]+pc->target_mass_flow)/pc->target_mass_flow);
+    }
     pj.set("faces", static_cast<std::int64_t>(patch.count));
     pj.set("area_nd", area);
     pj.set("mdot_nd", F[0]);
@@ -246,7 +262,7 @@ KineticPatchSummary summarize_kinetic_patches(const PolyMesh& mesh, const MeshGe
     if (pc->type == BoundaryType::PressureOutlet || pc->type == BoundaryType::Vacuum) {
       out.mdot_out += F[0];
       out.has_out = true;
-    } else if (pc->type == BoundaryType::PressureInlet) {
+    } else if ((pc->type == BoundaryType::PressureInlet || pc->type == BoundaryType::MassFlowInlet)) {
       out.mdot_in -= F[0];
       out.has_in = true;
     }
@@ -323,6 +339,7 @@ KineticHistoryWriter::KineticHistoryWriter(const std::filesystem::path& path, co
   header.emplace_back("mass_imbalance");
   for (std::size_t k = 0; k < n_sections_; ++k) header.push_back(std::format("{}sec{}", mass_flow_display_prefix(setup), k));
   header.emplace_back("gpu_memory_bytes");
+  for (const auto& pc : setup.patches) if (pc.type == BoundaryType::MassFlowInlet) header.push_back("p_b_"+pc.name+"_Pa");
   csv_ = std::make_unique<CsvWriter>(path, std::move(header));
   csv_->set_autoflush(true);
 }
@@ -365,6 +382,7 @@ void KineticHistoryWriter::write(const KineticIterationInfo& info, double elapse
     row.emplace_back(k < section_flow_nd.size() ? mass_flow_display(setup_, section_flow_nd[k]) : nan);
   }
   row.emplace_back(static_cast<std::int64_t>(gpu_memory_bytes_));
+  for (const auto& pc : setup_.patches) if (pc.type == BoundaryType::MassFlowInlet) row.emplace_back(pc.p*setup_.derived.ref.pressure);
   csv_->write_row(std::span<const CsvValue>(row));
 }
 

@@ -360,12 +360,16 @@ KineticSetup build_kinetic_setup(const CaseConfig& config, const PolyMesh& mesh,
     pc.first_bface = patch.start - n_int;
     pc.n_faces = patch.count;
     switch (b->type) {
+      case BoundaryType::MaxwellWall:
       case BoundaryType::DiffuseWall:
+        pc.accommodation = b->accommodation;
         pc.kind = kBcDiffuseWall;
         pc.T = *b->temperature / ref.temperature;
         if (b->velocity) pc.u_wall = *b->velocity / ref.velocity;
         break;
+      case BoundaryType::MassFlowInlet:
       case BoundaryType::PressureInlet:
+        pc.target_mass_flow = b->mass_flow.value_or(0.0) / (ref.mass_flux * ref.length * ref.length);
         pc.kind = kBcPressure;
         pc.T = *b->temperature / ref.temperature;
         pc.p = b->pressure.value_or(s.derived.p_in) / ref.pressure;
@@ -393,8 +397,21 @@ KineticSetup build_kinetic_setup(const CaseConfig& config, const PolyMesh& mesh,
         pc.kind = kBcPeriodic;
         break;
     }
+    if (pc.accommodation < 1.0) {
+      pc.kind = kBcMaxwellWall;
+      for (int a = 0; a < 3; ++a) GSIS_CHECK(grid.n(a) >= 2, "Maxwell壁の速度格子は各軸2点以上必要です");
+      for (Index f = patch.start; f < patch.end(); ++f) {
+        const auto& n = s.geometry.face_normal[static_cast<std::size_t>(f)];
+        for (int a = 0; a < 3; ++a) {
+          if (std::abs(std::abs(n[a]) - 1.0) < 1e-10) {
+            GSIS_CHECK(grid.symmetric(a), "Maxwell壁の鏡映軸の速度範囲は対称にしてください");
+            mirror_axes.push_back(a);
+          }
+        }
+      }
+    }
     // 壁速度は面に接する向きでなければならない
-    if (pc.kind == kBcDiffuseWall && norm(pc.u_wall) > 0.0) {
+    if ((pc.kind == kBcDiffuseWall || pc.kind == kBcMaxwellWall) && norm(pc.u_wall) > 0.0) {
       for (Index f = patch.start; f < patch.end(); ++f) {
         const double un = dot(pc.u_wall, s.geometry.face_normal[static_cast<std::size_t>(f)]);
         GSIS_CHECK(std::abs(un) <= 1e-9 * norm(pc.u_wall),
@@ -405,6 +422,16 @@ KineticSetup build_kinetic_setup(const CaseConfig& config, const PolyMesh& mesh,
     s.patches.push_back(pc);
   }
   s.bface_patch = s.mesh.boundary_face_patches();
+  s.grid_n = config.velocity_grid.n;
+  for (const auto& pc : s.patches) if (pc.kind == kBcMaxwellWall) s.n_maxwell_faces += pc.n_faces;
+  if (s.n_maxwell_faces > 0) {
+    s.maxwell.resize(s.n_bfaces());
+    int slot = 0;
+    for (int b = 0; b < s.n_bfaces(); ++b) {
+      const auto& pc = s.patches[s.bface_patch[b]];
+      if (pc.kind == kBcMaxwellWall) s.maxwell[b] = {static_cast<long long>(slot++) * grid.size(), 1.0 - pc.accommodation};
+    }
+  }
 
   // 保存的な離散平衡分布の判定に使う速度格子の範囲と刻み
   s.discrete_eq = params.equilibrium == "discrete";
@@ -547,6 +574,10 @@ std::vector<BoundaryFaceInfo<F>> make_bface_infos(const KineticSetup& s) {
     o.owner = owner;
     o.kind = pc.kind;
     o.mirror_xor = pc.kind == kBcSymmetry ? s.velocity.axis_xor[static_cast<std::size_t>(pc.mirror_axis)] : 0;
+    if (pc.kind == kBcMaxwellWall) {
+      const auto& normal = s.geometry.face_normal[static_cast<std::size_t>(f)];
+      for (int a = 0; a < 3; ++a) if (std::abs(std::abs(normal[a]) - 1.0) < 1e-10) o.mirror_xor = s.velocity.axis_xor[a];
+    }
     o.patch = pi;
     o.nx = static_cast<F>(n.x);
     o.ny = static_cast<F>(n.y);

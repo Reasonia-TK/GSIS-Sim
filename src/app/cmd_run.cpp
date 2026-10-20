@@ -555,7 +555,8 @@ int run_gsis_mode(const RunOptions& opt, const CaseConfig& cfg, const std::files
     const bool balance_ok = !cfg.gsis.mass_balance_required || !mb_half.valid ||
                             std::abs(mb_half.imbalance) < cfg.gsis.mass_balance_tolerance;
     stopped = stop_requested(out_dir);
-    if (it.iteration >= min_iter && it.change.epsilon < tol && balance_ok) {
+    if (it.iteration >= min_iter && it.change.epsilon < tol && balance_ok &&
+        mass_flow_targets_met(s,solver.kinetic().prepare().patch_mass_flow)) {
       converged = true;
       break;
     }

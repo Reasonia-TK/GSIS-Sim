@@ -329,3 +329,20 @@ GSISの追加 `conservation_diagnostics`:
 | `last_pbc_correction.epsilon`, `rho`, `u`, `T` | フィルタ・減衰後のW_newとCIS後W_halfの式(59)型相対変化。外側反復0回ならnull。epsilonは3成分の最大 |
 
 既定の収束判定は変更していない。`converged=true` でも `warning=true` になり得る。従来の `mass_balance`、`mass_flow`、`pbc_change` は維持する。局所凍結・負値置換のあるセルでは、上記補正ノルムが実際のΔfのノルムと一致するとは限らない。
+
+### S3の境界条件と追加出力
+
+`maxwell_wall` は必須の `temperature`[K]・`accommodation`(0<α≤1)、任意の `velocity`[m/s]を受け付ける。α=1は既存のdiffuse_wallと同じ計算経路。一般法線の鏡面反射には平衡分布で規格化した三線形補間と零質量流束の密度補正を使う。NSF単独も半空間PBC境界を使うが、連続体のすべり・温度跳躍条件と同じ精度ではないことを警告する。
+
+`mass_flow_inlet` は必須の `mass_flow`[kg/s、流入正、正値]・`temperature`[K]、任意の `tangential_velocity="extrapolate"|"zero"` を受け付ける。初期圧力はp_ref。CISは各スイープ前、GSISは補正後fを使って各外側反復前、NSFは各マクロ反復で圧力を更新する。新境界がある場合だけ、従来のノルム判定に加え、各入口の目標との相対差≤0.001を収束の必要条件とする。GSISは補正後fで判定する。全体の保存性警告は引き続き別途確認する。
+
+| 場所・キー | 意味 |
+|---|---|
+| check-case / summary の `patches[].accommodation` | Maxwell壁のα |
+| check-case / summary の `patches[].target_mass_flow_kg_s` | 質量流量入口の目標、流入正[kg/s] |
+| check-case の `patches[].pressure_Pa` | 質量流量入口の初期圧力p_ref[Pa] |
+| summary の `patches[].pressure_Pa` | 質量流量入口の最終のp_b[Pa] |
+| summary の `patches[].mass_flow_relative_error` | `abs(Q−target)/target`、Qは最終流量 |
+| history.csv の `p_b_<patch>_Pa` | 行に対応する評価時のp_b。対象入口だけ末尾に追加 |
+
+check-caseの `tangential_velocity` と自動格子の温度集計には質量流量入口も含める。`conservation_diagnostics.inlet_kg_s` と管の流量診断の入口分類にも含める。部分適応壁がある場合、`memory.overhead` に反射キャッシュ・面の対応・格子の逆対応を含める。既存境界のみの場合の見積もりは維持する。実装の導出・速度格子への依存は `docs/design_bc_phase8.md` を参照。

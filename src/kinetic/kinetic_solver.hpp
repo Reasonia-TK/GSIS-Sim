@@ -77,7 +77,9 @@ class KineticSolver {
   // 同じ f に対して何度呼んでもよい(2 回目以降は前の結果を返す)
   const KineticIterationInfo& prepare();
   // f を 1 回更新する(必要なら先に prepare する)。residual と時間を入れた記録を返す
-  const KineticIterationInfo& sweep();
+  // GSISでは補正後fから外側反復ごとに更新し、CIS段の間は固定する。
+  void update_mass_flow_pressure();
+  const KineticIterationInfo& sweep(bool update_pressure = true);
   long long iteration() const;
 
   // 現在の f のモーメントと境界面の離散半空間フラックス(元の番号)

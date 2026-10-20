@@ -21,7 +21,13 @@ enum BoundaryKind : std::int32_t {
   kBcPressure = 1,     // 圧力入口・出口: 流入 = f^eq(W_b)(付録 A.2)
   kBcVacuum = 2,       // 真空: 流入 = 0
   kBcSymmetry = 3,     // 対称面: 流入 = 鏡映した速度点の流出側の再構成値
+  kBcMaxwellWall = 5, // 部分適応壁。鏡面成分を反復の初めに固定する
   kBcPeriodic = 4,     // 並進周期(1 セル厚の対面): 流束の和から除く。勾配への寄与は 0
+};
+
+struct MaxwellFace {
+  long long offset = -1;
+  double specular_fraction = 0.0;
 };
 
 // セル → 面の CSR の 1 要素(セル i から見た面)
@@ -135,6 +141,11 @@ struct KineticView {
   const CellParams<F>* cells = nullptr;
   // 分布関数 [n_cells][nv]
   F* f = nullptr;
+  const MaxwellFace* maxwell = nullptr;
+  F* specular = nullptr;
+  F* specular_first = nullptr;
+  const int* grid_to_storage = nullptr;
+  int grid_n[3] = {0, 0, 0};
   // LU-SGS のスイープの順序(フェーズ 5a、[kinetic].sweep_order)。n_sweep_dirs = 0 なら内部の番号の順(従来)。
   // n_sweep_dirs > 0 なら、速度点 p は向き g = sweep_dir_of[p] の順序を使う:
   //   sweep_order[g × n_cells + k] は k 番目に処理するセル(各ブロックの区間 [cb, ce) の中の並べ替え)、

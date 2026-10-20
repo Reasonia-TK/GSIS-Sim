@@ -66,6 +66,8 @@ inline const char* to_string(MacroBoundaryKind kind) {
 // 1 つのパッチの境界条件(無次元)
 struct MacroBoundaryCondition {
   MacroBoundaryKind kind = MacroBoundaryKind::DiffuseWall;
+  double accommodation = 1.0;
+  double target_mass_flow = 0.0; // 流入正。0なら圧力を固定
   double temperature = 1.0;  // 拡散壁の T_w、圧力入口の T_in
   double pressure = 0.0;     // 圧力入口の p_in、圧力出口の p_out
   Vec3 velocity{};           // 拡散壁の壁速度(面ごとに法線成分を除いて使う)
@@ -150,7 +152,9 @@ inline Vec5 incoming_flux(const MacroBoundaryCondition& bc, const BoundaryFaceEx
       // 式 (75)、j_Γ = 0
       const double Tw = bc.temperature;
       const double rho_t = F_plus[0] / (A * std::sqrt(Tw / (2.0 * kPi)));
-      return vec5_scale(half_flux(-1, wall_unit_state(bc, n), n, A), rho_t);
+      const Vec5 diffuse = vec5_scale(half_flux(-1, wall_unit_state(bc, n), n, A), rho_t);
+      if (bc.accommodation == 1.0) return diffuse;
+      return vec5_add(vec5_scale(diffuse,bc.accommodation),vec5_scale(mirror_flux(F_plus,n),1.0-bc.accommodation));
     }
     case MacroBoundaryKind::PressureInlet:
     case MacroBoundaryKind::PressureOutlet: {
@@ -218,6 +222,16 @@ inline Mat5 boundary_flux_jacobian(const MacroBoundaryCondition& bc, const Bound
       Mat5 J = Jp;
       for (int r = 0; r < 5; ++r) {
         for (int c = 0; c < 5; ++c) J(r, c) += s * Fm1[r] * Jp(0, c);
+      }
+      if (bc.accommodation < 1.0) {
+        const double nn[3] = {n.x,n.y,n.z};
+        for (int c = 0; c < 5; ++c) {
+          const double proj = nn[0]*Jp(1,c)+nn[1]*Jp(2,c)+nn[2]*Jp(3,c);
+          for (int r = 0; r < 5; ++r) {
+            const double spec = r > 0 && r < 4 ? 2.0*nn[r-1]*proj : 0.0;
+            J(r,c) = bc.accommodation*J(r,c)+(1.0-bc.accommodation)*spec;
+          }
+        }
       }
       return J;
     }
@@ -302,6 +316,12 @@ inline Vec5 boundary_face_state(const MacroBoundaryCondition& bc, const Boundary
       const Vec5 Fp = half_space_flux(+1, Wb[0], velocity_of(Wb), Wb[4], 1.0, n);
       const double rho_t = Fp[0] / std::sqrt(bc.temperature / (2.0 * kPi));
       Dm = vec5_scale(half_space_density(-1, wall_unit_state(bc, n), n), rho_t);
+      if (bc.accommodation < 1.0) {
+        Vec5 reflected = Dp;
+        const double mn = Dp[1]*n.x+Dp[2]*n.y+Dp[3]*n.z;
+        for (int a = 0; a < 3; ++a) reflected[1+a] -= 2.0*mn*n[a];
+        Dm = vec5_add(vec5_scale(Dm,bc.accommodation),vec5_scale(reflected,1.0-bc.accommodation));
+      }
       break;
     }
     case MacroBoundaryKind::PressureInlet:

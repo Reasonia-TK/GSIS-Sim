@@ -77,6 +77,61 @@ GSIS_HD inline F inflow_value(const BoundaryInflow<F>& b, const Vec3T<F>& xi) {
   return b.scale * maxwellian(b.m, xi);
 }
 
+template <class F>
+GSIS_HD inline F reconstruct_at_boundary(const KineticView<F>& v, const BoundaryFaceInfo<F>& b, int p,
+                                         const Vec3T<F>& xi);
+
+// 勾配用はセル値、反射キャッシュ用は面へ再構成した値を三線形補間する。
+template <bool Reconstruct, class F>
+GSIS_HD inline F reflected_value(const KineticView<F>& v, const BoundaryFaceInfo<F>& b, int p,
+                                  const Vec3T<F>& xi) {
+  if (b.mirror_xor != 0) {
+    const int q = p ^ b.mirror_xor;
+    if constexpr (Reconstruct) return reconstruct_at_boundary(v, b, q, velocity_at(v, q));
+    else return f_at(v, b.owner, q);
+  }
+  const F un = xi.x * b.nx + xi.y * b.ny + xi.z * b.nz;
+  const F r[3] = {xi.x - F(2) * un * b.nx, xi.y - F(2) * un * b.ny, xi.z - F(2) * un * b.nz};
+  int base[3];
+  F t[3];
+  for (int a = 0; a < 3; ++a) {
+    const double z = (static_cast<double>(r[a]) - v.deq.lo[a]) / v.deq.d[a] - 0.5;
+    if (z < -1e-5 || z > v.grid_n[a] - 1.0 + 1e-5) return F(0);
+    const double clipped = dmath::max(0.0, dmath::min(z, v.grid_n[a] - 1.0));
+    base[a] = static_cast<int>(clipped);
+    if (base[a] >= v.grid_n[a] - 1) base[a] = v.grid_n[a] - 2;
+    t[a] = static_cast<F>(clipped - base[a]);
+  }
+  F result = F(0);
+  for (int k = 0; k < 8; ++k) {
+    const int ix = base[0] + (k & 1), iy = base[1] + ((k >> 1) & 1), iz = base[2] + ((k >> 2) & 1);
+    const F w = ((k & 1) ? t[0] : F(1) - t[0]) * ((k & 2) ? t[1] : F(1) - t[1]) *
+                ((k & 4) ? t[2] : F(1) - t[2]);
+    if (w == F(0)) continue;
+    const int q = v.grid_to_storage[ix + v.grid_n[0] * (iy + v.grid_n[1] * iz)];
+    F value;
+    if constexpr (Reconstruct) value = reconstruct_at_boundary(v, b, q, velocity_at(v, q));
+    else value = f_at(v, b.owner, q);
+    // 平衡分布を保つ三線形補間。fそのものの補間による人工的な加熱を避ける。
+    // M(r)/M(q)は指数の差から作り、速度空間の裾での0/0を避ける。
+    const auto ref = v.cells[b.owner].s.eq;
+    const auto vq = velocity_at(v,q);
+    const double drx=static_cast<double>(r[0])-ref.u.x, dry=static_cast<double>(r[1])-ref.u.y,
+                 drz=static_cast<double>(r[2])-ref.u.z;
+    const double dqx=static_cast<double>(vq.x)-ref.u.x, dqy=static_cast<double>(vq.y)-ref.u.y,
+                 dqz=static_cast<double>(vq.z)-ref.u.z;
+    const double ratio=dmath::exp(-static_cast<double>(ref.B)*(drx*drx+dry*dry+drz*drz-dqx*dqx-dqy*dqy-dqz*dqz));
+    result += w * static_cast<F>(static_cast<double>(value)*ratio);
+  }
+  return result;
+}
+
+template <class F>
+GSIS_HD inline F maxwell_inflow(const KineticView<F>& v, int b, int p, const Vec3T<F>& xi) {
+  return inflow_value(v.binflow[b], xi) + static_cast<F>(v.maxwell[b].specular_fraction) *
+         v.specular[v.maxwell[b].offset + p];
+}
+
 // ---------------------------------------------------------------------------
 // 勾配とリミッタ(docs/design_cis_gpu.md §5)
 // ---------------------------------------------------------------------------
@@ -94,6 +149,10 @@ GSIS_HD inline F boundary_value_first_order(const KineticView<F>& v, const CsrEn
   if (b.kind == kBcSymmetry) return F(0.5) * (f_i + f_at(v, cell, p ^ b.mirror_xor));
   const F a = flux_coefficient(xi, c.sx, c.sy, c.sz);
   if (a >= F(0)) return f_i;  // 流出側: 勾配 0 の外挿
+  if (b.kind == kBcMaxwellWall) {
+    return inflow_value(v.binflow[c.bface], xi) + static_cast<F>(v.maxwell[c.bface].specular_fraction) *
+           v.specular_first[v.maxwell[c.bface].offset + p];
+  }
   return inflow_value(v.binflow[c.bface], xi);
 }
 
@@ -206,6 +265,8 @@ GSIS_HD inline F residual_value(const KineticView<F>& v, const ChunkView<F>& ch,
       const int tm = t ^ v.bfaces[c.bface].mirror_xor;
       const i64 wm = static_cast<i64>(cell) * ch.stride + tm;
       ff = f_at(v, cell, ch.k0 + tm) + ch.gx[wm] * c.dsx + ch.gy[wm] * c.dsy + ch.gz[wm] * c.dsz;
+    } else if (kind == kBcMaxwellWall) {
+      ff = maxwell_inflow(v, c.bface, p, xi);
     } else {
       ff = inflow_value(v.binflow[c.bface], xi);
     }

@@ -34,6 +34,10 @@ class CpuBackend final : public KineticBackend {
     eps2_ = make_eps2<F>(s);
     bfaces_ = make_bface_infos<F>(s);
     binflow_.assign(static_cast<std::size_t>(n_bfaces_), BoundaryInflow<F>{});
+    if (s.n_maxwell_faces > 0) {
+      specular_.resize(static_cast<std::size_t>(s.n_maxwell_faces) * nv_);
+      specular_first_.resize(specular_.size());
+    }
     cells_.assign(static_cast<std::size_t>(n_cells_), CellParams<F>{});
     f_.assign(static_cast<std::size_t>(n_cells_) * static_cast<std::size_t>(nv_), F(0));
     moments_.assign(static_cast<std::size_t>(n_cells_) * kMomentsPerCell, 0.0);
@@ -53,7 +57,7 @@ class CpuBackend final : public KineticBackend {
   const char* name() const override { return "cpu"; }
   int chunk_width() const override { return chunk_; }
   std::size_t memory_bytes() const override {
-    return sizeof(F) * (f_.size() + gx_.size() + gy_.size() + gz_.size() + r_.size()) +
+    return sizeof(F) * (f_.size() + specular_.size() + specular_first_.size() + gx_.size() + gy_.size() + gz_.size() + r_.size()) +
            sizeof(CsrEntry<F>) * csr_.size() + sizeof(double) * moments_.size();
   }
 
@@ -183,6 +187,28 @@ class CpuBackend final : public KineticBackend {
     Timer timer;
     const KineticView<F> v = view();
     const F w = static_cast<F>(s_.velocity.weight);
+    if (s_.n_maxwell_faces > 0) {
+#pragma omp parallel for schedule(dynamic, 1)
+      for (int b = 0; b < n_bfaces_; ++b) {
+        if (s_.maxwell[b].offset < 0) continue;
+        const auto& bf = bfaces_[b];
+        for (int p = 0; p < nv_; ++p) {
+          const auto xi = velocity_at(v, p);
+          specular_first_[s_.maxwell[b].offset + p] = dot(xi, Vec3T<F>{bf.nx,bf.ny,bf.nz}) < F(0)
+              ? reflected_value<false>(v, bf, p, xi) : F(0);
+        }
+      }
+#pragma omp parallel for schedule(dynamic, 1)
+      for (int b = 0; b < n_bfaces_; ++b) {
+        if (s_.maxwell[b].offset < 0) continue;
+        const auto& bf = bfaces_[b];
+        for (int p = 0; p < nv_; ++p) {
+          const auto xi = velocity_at(v, p);
+          specular_[s_.maxwell[b].offset + p] = dot(xi, Vec3T<F>{bf.nx,bf.ny,bf.nz}) < F(0)
+              ? reflected_value<true>(v, bf, p, xi) : F(0);
+        }
+      }
+    }
 #pragma omp parallel for schedule(dynamic, 4)
     for (int b = 0; b < n_bfaces_; ++b) {
       const BoundaryFaceInfo<F>& bf = bfaces_[static_cast<std::size_t>(b)];
@@ -198,6 +224,8 @@ class CpuBackend final : public KineticBackend {
           if (bf.kind == kBcSymmetry) {
             const int pm = p ^ bf.mirror_xor;
             fb = reconstruct_at_boundary(v, bf, pm, velocity_at(v, pm));
+          } else if (bf.kind == kBcMaxwellWall) {
+            fb = maxwell_inflow(v, b, p, xi);
           } else {
             fb = maxwellian(binflow_[static_cast<std::size_t>(b)].m, xi);  // 単位(scale を掛けない)
           }
@@ -446,6 +474,13 @@ class CpuBackend final : public KineticBackend {
     v.binflow = binflow_.data();
     v.cells = cells_.data();
     v.f = f_.data();
+    if (s_.n_maxwell_faces > 0) {
+      v.maxwell = s_.maxwell.data();
+      v.specular = specular_.data();
+      v.specular_first = specular_first_.data();
+      v.grid_to_storage = s_.velocity.grid_to_storage.data();
+      for (int a = 0; a < 3; ++a) v.grid_n[a] = s_.grid_n[a];
+    }
     v.n_sweep_dirs = s_.n_sweep_dirs;
     if (s_.n_sweep_dirs > 0) {
       v.sweep_order = s_.sweep_order.data();
@@ -471,7 +506,7 @@ class CpuBackend final : public KineticBackend {
   std::vector<BoundaryFaceInfo<F>> bfaces_;
   std::vector<BoundaryInflow<F>> binflow_;
   std::vector<CellParams<F>> cells_;
-  std::vector<F> f_;
+  std::vector<F> f_, specular_, specular_first_;
   std::vector<double> moments_;
   std::vector<double> shift_;
   std::vector<F> gx_, gy_, gz_, r_;

@@ -36,6 +36,9 @@ void launch_cell_params_deq(const KineticView<F>& v, const double* moments, cons
 
 // 境界面 [b0, b0 + nb) の集計(1 面 20 個)
 template <class F>
+void launch_maxwell_reflection(const KineticView<F>& v);
+
+template <class F>
 void launch_boundary_sums(const KineticView<F>& v, double* out, int b0, int nb);
 
 // 内部面 [i0, i0 + ni) の質量流束(フェーズ 5c)。面 i はセル cells[i] の CSR の要素 entries[i]。

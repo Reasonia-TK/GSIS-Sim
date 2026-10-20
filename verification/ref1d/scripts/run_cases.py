@@ -44,6 +44,7 @@ def parse_vgrid(spec: str):
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--accommodation", type=float, default=1.0, help="両壁のMaxwell適応係数")
     ap.add_argument("--N", type=int, default=800, help="本番の格子のセル数")
     ap.add_argument("--vgrid", default="v3", help="本番の速度格子")
     ap.add_argument("--N-check", type=int, default=400, help="誤差の目安用の格子のセル数(0 で省略)")
@@ -69,7 +70,7 @@ def main() -> None:
     for case in args.cases:
         prev = prevc = None
         for Kn in sorted(args.kn, reverse=True):  # 大きい Kn から順に解き、前の解を初期値にする
-            pr = make_problem(case, Kn)
+            pr = make_problem(case, Kn, accommodation=args.accommodation)
             s = Solver(pr, mesh, vg)
             r = s.solve(prim0=None if prev is None else s.interpolate_from(prev))
             prev = r

@@ -1,0 +1,62 @@
+# S3: 960セルの短い六面体管、delta=10。局所凍結なし。
+[case]
+name = "tube_d10_p5c"
+mesh = "tube_short.pmesh"
+mode = "gsis"
+
+[gas]
+molecular_mass = 6.65e-27           # kg (He)
+mu_ref = 1.916e-5                   # Pa s
+T_ref = 273.15                      # K
+omega = 0.66
+
+[conditions]
+L_ref = 1.0e-3                      # m(管半径)
+T0 = 273.15                         # K
+delta_rp = 10
+
+[[boundary]]
+patch = "inlet"
+type = "mass_flow_inlet"
+mass_flow=2.8660455793583122e-07
+temperature = 273.15
+tangential_velocity = "zero"
+
+[[boundary]]
+patch = "outlet"
+type = "vacuum"
+
+[[boundary]]
+patch = "wall"
+type = "diffuse_wall"
+temperature = 273.15
+
+[velocity_grid]
+n = [16, 16, 16]
+range = [[-6.0, 6.0], [-6.0, 6.0], [-6.0, 6.0]]   # 単位 sqrt(R*T0)
+
+[gsis]
+n_cis = 5
+max_pbc = 10
+cfl_pbc = 500.0
+tolerance = 1.0e-8
+max_iterations = 200
+filter_length = 1.0
+mass_balance_tolerance = 2.0e-3
+
+[kinetic]
+precision="fp64"
+sweep_blocks = 1
+positivity_limiter = false
+limiter_k = 3.0
+max_iterations = 4000
+
+[macro]
+advection = "upwind2"
+boundary_reconstruction = "limited"
+hot_interpolation = "face"
+gsis_face_state = "kinetic"
+gsis_freeze_kn = 0.0
+gsis_cfl_start = 0.0
+init_iterations = 50
+init_advection = "upwind1"

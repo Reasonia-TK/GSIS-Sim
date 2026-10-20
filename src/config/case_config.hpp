@@ -24,6 +24,8 @@ namespace gsis {
 enum class SolverMode { Gsis, Cis, Nsf };
 
 enum class BoundaryType {
+  MaxwellWall,     // Maxwell反射壁(0 < accommodation <= 1)
+  MassFlowInlet,   // 流入正の質量流量入口
   DiffuseWall,     // 静止(または移動)完全拡散壁: temperature が必須、velocity は任意
   PressureInlet,   // 圧力入口: temperature が必須、pressure は任意(省略時は p_in。delta_rp が必要)
   PressureOutlet,  // 圧力出口: pressure が必須
@@ -72,6 +74,8 @@ struct ConditionsSection {
 struct BoundarySpec {
   std::string patch;
   BoundaryType type = BoundaryType::DiffuseWall;
+  double accommodation = 1.0;
+  std::optional<double> mass_flow;     // [kg/s]、流入正
   std::optional<double> temperature;  // [K]
   std::optional<double> pressure;     // [Pa]
   std::optional<Vec3> velocity;       // 壁速度 [m/s](任意。クエット流の検証用)

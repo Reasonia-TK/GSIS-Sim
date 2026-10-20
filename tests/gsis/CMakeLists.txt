@@ -3,6 +3,7 @@
 #   gsis_gpu:*   GPU の運動論ソルバー(CPU との一致・決定性。GPU がなければ SKIP)
 #   gsis_cli:*   gsis-solver run の通し検査
 add_executable(gsis_gsis_tests
+  test_phase8_bc.cpp
   test_gsis.cpp
   gsis_test_cases.cpp
   ../kinetic/kinetic_test_cases.cpp)
@@ -19,6 +20,7 @@ catch_discover_tests(gsis_gsis_tests
 
 if(GSIS_ENABLE_CUDA)
   add_executable(gsis_gsis_gpu_tests
+    test_phase8_bc_gpu.cpp
     test_gsis_gpu.cpp
     gsis_test_cases.cpp
     ../kinetic/kinetic_test_cases.cpp)

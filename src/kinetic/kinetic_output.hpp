@@ -53,6 +53,8 @@ class KineticHistoryWriter {
 };
 
 // 質量流量の換算: 無次元 → kg/s
+bool mass_flow_targets_met(const kinetic::KineticSetup& setup, std::span<const double> flow);
+
 double mass_flow_to_si(const kinetic::KineticSetup& setup, double nondimensional);
 
 // 質量流量の表示用の換算(フェーズ 5c): 管(delta_rp を与えたケース)なら無次元質量流量 Ṁ、そうでなければ無次元の値のまま

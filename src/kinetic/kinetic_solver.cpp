@@ -16,6 +16,7 @@
 namespace gsis {
 
 using kinetic::kBcDiffuseWall;
+using kinetic::kBcMaxwellWall;
 using kinetic::kBcPeriodic;
 using kinetic::kBcPressure;
 using kinetic::kBcSymmetry;
@@ -37,6 +38,7 @@ struct KineticSolver::Impl {
   bool has_prev = false;
   std::vector<double> bsums;         // 境界の集計(20 個/面)
   std::vector<kinetic::InflowState> inflow;
+  std::vector<std::array<double, 10>> wall_unit_moments;
   std::vector<std::array<double, 5>> F_plus, F_minus;  // 内部の番号
   std::vector<std::array<double, 5>> face_state;       // [ρ, ux, uy, uz, T](内部の番号)
   bool has_face_state = false;
@@ -116,7 +118,7 @@ struct KineticSolver::Impl {
     for (Index b = 0; b < s.n_bfaces(); ++b) {
       const kinetic::PatchCondition& pc = s.patches[static_cast<std::size_t>(s.bface_patch[static_cast<std::size_t>(b)])];
       kinetic::InflowState& in = inflow[static_cast<std::size_t>(b)];
-      if (pc.kind == kBcDiffuseWall) {
+      if (pc.kind == kBcDiffuseWall || pc.kind == kBcMaxwellWall) {
         in.rho = 1.0;
         in.u = pc.u_wall;
         in.T = pc.T;
@@ -128,6 +130,13 @@ struct KineticSolver::Impl {
         in.T = pc.T;
       } else {
         in = kinetic::InflowState{};
+      }
+    }
+    if (s.n_maxwell_faces > 0) {
+      wall_unit_moments.resize(s.n_bfaces());
+      for (Index b = 0; b < s.n_bfaces(); ++b) {
+        if (s.patches[s.bface_patch[b]].kind == kBcMaxwellWall)
+          wall_unit_moments[b] = compute_wall_unit_sums(b);
       }
     }
   }
@@ -148,9 +157,9 @@ struct KineticSolver::Impl {
     const Index n_int = s.mesh.n_internal_faces();
     for (Index b = 0; b < s.n_bfaces(); ++b) {
       const kinetic::PatchCondition& pc = s.patches[static_cast<std::size_t>(s.bface_patch[static_cast<std::size_t>(b)])];
-      if (pc.kind != kBcDiffuseWall) continue;
+      if (pc.kind != kBcDiffuseWall && pc.kind != kBcMaxwellWall) continue;
       const Index c = s.mesh.owner[static_cast<std::size_t>(b + n_int)];
-      inflow[static_cast<std::size_t>(b)].scale = cell_value(moments, c, 0) * std::sqrt(cell_value(moments, c, 4) / pc.T);
+      inflow[static_cast<std::size_t>(b)].scale = pc.accommodation * cell_value(moments, c, 0) * std::sqrt(cell_value(moments, c, 4) / pc.T);
     }
   }
 
@@ -231,7 +240,7 @@ struct KineticSolver::Impl {
         const double cs = std::sqrt(s.gamma * T_ib);
         const Vec3& n = s.geometry.face_normal[f];
         double p_b, T_b;
-        if (pc.type == BoundaryType::PressureInlet) {
+        if (pc.type == BoundaryType::PressureInlet || pc.type == BoundaryType::MassFlowInlet) {
           p_b = pc.p;
           T_b = pc.T;
         } else {
@@ -248,6 +257,23 @@ struct KineticSolver::Impl {
         correct_inflow(in);
       }
     }
+  }
+
+  // 部分適応壁の単位密度Maxwell分布の離散半空間モーメント。
+  std::array<double, 10> compute_wall_unit_sums(Index b) const {
+    std::array<double, 10> out{};
+    const auto& n = s.geometry.face_normal[static_cast<std::size_t>(b + s.mesh.n_internal_faces())];
+    const auto& in = inflow[b];
+    const auto m = make_maxwell_params(in.rho,in.u,in.T,1.0);
+    for (int p = 0; p < s.nv(); ++p) {
+      const Vec3 xi{s.velocity.xi_x[p],s.velocity.xi_y[p],s.velocity.xi_z[p]};
+      const double un = dot(xi,n);
+      if (un >= 0.0) continue;
+      const double wf = s.velocity.weight * maxwellian(m,xi);
+      const double psi[5] = {1.0,xi.x,xi.y,xi.z,0.5*norm2(xi)};
+      for (int k = 0; k < 5; ++k) { out[k] += wf*un*psi[k]; out[5+k] += wf*psi[k]; }
+    }
+    return out;
   }
 
   // 境界の集計から ρ_Γ、F^±、境界面の分布のモーメント、パッチの質量流量を作る
@@ -274,12 +300,27 @@ struct KineticSolver::Impl {
       } else if (pc.kind == kBcVacuum) {
         in_scale = 0.0;
       }
+      std::array<double, 10> unit{};
+      double delta = 0.0;
+      if (pc.kind == kBcMaxwellWall) {
+        unit = wall_unit_moments[b];
+        GSIS_CHECK(unit[0] < 0.0, "Maxwell壁の流入速度点がありません");
+        delta = -(sm[0] + sm[5]) / unit[0];
+        const double next = inflow[bi].scale + delta;
+        GSIS_CHECK(next >= -1e-8, "Maxwell壁の拡散密度が負になります。速度格子を細かく、広くしてください");
+        inflow[bi].scale = std::max(0.0, next);
+      }
       std::array<double, 5> mom{};
       for (int k = 0; k < 5; ++k) {
         const auto ks = static_cast<std::size_t>(k);
         F_plus[bi][ks] = area * sm[k];
-        F_minus[bi][ks] = area * in_scale * sm[5 + k];
-        mom[ks] = sm[10 + k] + in_scale * sm[15 + k];
+        if (pc.kind == kBcMaxwellWall) {
+          F_minus[bi][ks] = area * (sm[5 + k] + delta * unit[k]);
+          mom[ks] = sm[10 + k] + sm[15 + k] + delta * unit[5 + k];
+        } else {
+          F_minus[bi][ks] = area * in_scale * sm[5 + k];
+          mom[ks] = sm[10 + k] + in_scale * sm[15 + k];
+        }
       }
       auto& fs = face_state[bi];
       if (mom[0] > 0.0) {
@@ -418,8 +459,16 @@ struct KineticSolver::Impl {
     for (Index b = 0; b < s.n_bfaces(); ++b) {
       const auto bi = static_cast<std::size_t>(b);
       const kinetic::PatchCondition& pc = s.patches[static_cast<std::size_t>(s.bface_patch[bi])];
-      if (pc.kind != kBcDiffuseWall) continue;
+      if (pc.kind != kBcDiffuseWall && pc.kind != kBcMaxwellWall) continue;
       const double* sm = &bsums[bi * kBoundarySumsPerFace];
+      if (pc.kind == kBcMaxwellWall) {
+        const auto& unit = wall_unit_moments[b];
+        const double next = inflow[bi].scale - (sm[0] + sm[5]) / unit[0];
+        GSIS_CHECK(next >= -1e-8, "Maxwell壁の拡散密度が負になります。速度格子を細かくしてください");
+        inflow[bi].scale = std::max(0.0, next);
+        any = true;
+        continue;
+      }
       const double jp = sm[0];
       const double jm = sm[5];
       const double rho_g = jm < 0.0 ? std::max(0.0, -jp / jm) : 0.0;
@@ -430,8 +479,30 @@ struct KineticSolver::Impl {
     if (any) backend->set_inflow(inflow);
   }
 
-  const KineticIterationInfo& sweep() {
+  void update_mass_flow_pressure() {
     prepare();
+    bool changed = false;
+    for (std::size_t pi = 0; pi < s.patches.size(); ++pi) {
+      auto& pc = s.patches[pi];
+      if (pc.type != BoundaryType::MassFlowInlet) continue;
+      double D = 0.0;
+      for (Index b = pc.first_bface; b < pc.first_bface + pc.n_faces; ++b) {
+        const auto f = static_cast<std::size_t>(b + s.mesh.n_internal_faces());
+        const double T = cell_value(moments,s.mesh.owner[f],4);
+        D += s.geometry.face_area[f] / (s.length_scale*s.length_scale) *
+             (1.0/std::sqrt(2.0*kPi*pc.T) + 0.5/std::sqrt(s.gamma*T));
+      }
+      GSIS_CHECK(D > 0.0, "質量流量入口の面積が0です");
+      const double dp = 0.2*(pc.target_mass_flow + info.patch_mass_flow[pi])/D;
+      pc.p = std::max(1e-12,pc.p + std::clamp(dp,-0.1*pc.p,0.1*pc.p));
+      changed = true;
+    }
+    if (changed) { ++version; prepare(); }
+  }
+
+  const KineticIterationInfo& sweep(bool update_pressure) {
+    prepare();
+    if (update_pressure) update_mass_flow_pressure();
     Timer timer;
     backend->sweep(residual_cell);
     // 内部反復(inner_sweeps > 1): 目標分布 f^S(と圧力境界の W_b)を固定したまま LU-SGS をくり返す。
@@ -507,7 +578,8 @@ void KineticSolver::initialize_equilibrium(const CellMacroState& state) {
 }
 
 const KineticIterationInfo& KineticSolver::prepare() { return impl_->prepare(); }
-const KineticIterationInfo& KineticSolver::sweep() { return impl_->sweep(); }
+void KineticSolver::update_mass_flow_pressure() { impl_->update_mass_flow_pressure(); }
+const KineticIterationInfo& KineticSolver::sweep(bool update_pressure) { return impl_->sweep(update_pressure); }
 
 KineticMoments KineticSolver::moments() {
   impl_->prepare();

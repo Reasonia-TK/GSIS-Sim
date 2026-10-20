@@ -165,6 +165,7 @@ class PbcSolver {
   const MacroGas& gas() const { return gas_; }
   const std::vector<macro::MacroBoundaryCondition>& boundary_conditions() const { return patch_bc_; }
   // 遠方場のパッチの面ごとの状態 (p, u, T)(製造解法の試験用。空なら一様の値)
+  void set_patch_pressure(std::size_t patch, double pressure) { patch_bc_.at(patch).pressure = pressure; }
   void set_far_field_states(int patch, std::vector<Vec5> states);
   bool closed_domain() const { return closed_domain_; }
   // 無次元の幾何量

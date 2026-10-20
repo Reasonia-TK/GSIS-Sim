@@ -44,6 +44,8 @@ struct PatchCondition {
   BoundaryKind kind = kBcDiffuseWall;
   Index first_bface = 0;  // 境界面の番号(0 始まり)の範囲 [first_bface, first_bface + n_faces)
   Index n_faces = 0;
+  double accommodation = 1.0;
+  double target_mass_flow = 0.0;  // 無次元、流入正
   double T = 1.0;         // 壁温(拡散壁)・入口温度(圧力入口)
   double p = 0.0;         // 圧力(圧力入口・出口)
   Vec3 u_wall{};          // 壁速度(拡散壁)
@@ -95,6 +97,9 @@ struct KineticSetup {
 
   std::vector<PatchCondition> patches;  // メッシュのパッチの順
   std::vector<int> bface_patch;         // 境界面(内部の番号)→ パッチ番号
+  std::vector<MaxwellFace> maxwell;  // 部分適応壁があるときだけ境界面数を確保
+  int n_maxwell_faces = 0;
+  std::array<int, 3> grid_n{};
   bool closed_domain = false;           // 圧力境界(入口・出口・真空)がない
 
   // 気体(無次元の粘性 μ = mu0 T^ω)
